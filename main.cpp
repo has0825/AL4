@@ -37,6 +37,8 @@
 #include "Model.h"
 #include "MathUtil.h"
 #include "DataTypes.h"
+#include "Input.h"
+#include "Player.h"
 
 // === このファイルに残っているヘルパー関数 ===
 static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception)
@@ -94,9 +96,6 @@ struct D3DResourceLeakChecker {
 		}
 	}
 };
-
-// ===============================================
-
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 {
 	D3DResourceLeakChecker leakChecker;
@@ -106,6 +105,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
 	dxCommon->Initialize(winApp);
+
+	Input::GetInstance()->Initialize();
 
 	CoInitializeEx(0, COINIT_MULTITHREADED);
 	SetUnhandledExceptionFilter(ExportDump);
@@ -121,7 +122,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 	ID3D12GraphicsCommandList* commandList = dxCommon->GetCommandList();
 
-	Model* model = Model::Create("resources", "Plane.obj", device);
+	Model* playerModel = Model::Create("resources/player", "player.obj", device);
+	Player* player = new Player();
+	player->Initialize(playerModel);
 
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
@@ -130,8 +133,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource = UploadTextureData(textureResource.Get(), mipImages, device, commandList);
 
-	std::string planeTexturePath = "resources/monsterBall.png";
-	DirectX::ScratchImage mipImages2 = LoadTexture(planeTexturePath);
+	// ★修正点1: playerTexturePathをplayerフォルダ内のplayer.pngに変更
+	std::string playerTexturePath = "resources/player/player.png";
+	// ★修正点2: LoadTextureの引数も変更
+	DirectX::ScratchImage mipImages2 = LoadTexture(playerTexturePath);
 	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
 	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource2 = CreateTextureResource(device, metadata2);
 	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2 = UploadTextureData(textureResource2.Get(), mipImages2, device, commandList);
@@ -201,7 +206,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	Transform cameraTransform{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
 	Transform transformSprite{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
 	Transform uvTransformSprite{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
-	bool useMonstarBall = true;
 	int spriteBlendMode = kBlendModeNormal;
 
 	IMGUI_CHECKVERSION();
@@ -216,27 +220,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	while (!winApp->IsEndRequested()) {
 		winApp->ProcessMessage();
 
+		Input::GetInstance()->Update();
+		player->Update();
+
 		ImGui_ImplDX12_NewFrame();
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
-		ImGui::ShowDemoWindow();
-		ImGui::Begin("Controls");
-		ImGui::SliderFloat3("Scale", &model->transform.scale.x, 0.1f, 5.0f);
-		ImGui::SliderAngle("RotateX", &model->transform.rotate.x, -180.0f, 180.0f);
-		ImGui::SliderAngle("RotateY", &model->transform.rotate.y, -180.0f, 180.0f);
-		ImGui::SliderAngle("RotateZ", &model->transform.rotate.z, -180.0f, 180.0f);
-		ImGui::SliderFloat3("Translate", &model->transform.translate.x, -5.0f, 5.0f);
-		ImGui::Checkbox("useMonstarBall", &useMonstarBall);
-		ImGui::SliderFloat3("Light Direction", &directionalLightData->direction.x, -1.0f, 1.0f);
-		ImGui::Text("UVTransform");
-		ImGui::ColorEdit4("Sprite Color", &materialDataSprite->color.x);
-		const char* blendModeItems[] = { "None", "Normal", "Add", "Subtract", "Multiply" };
-		ImGui::Combo("Sprite BlendMode", &spriteBlendMode, blendModeItems, IM_ARRAYSIZE(blendModeItems));
-		ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
-		ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
-		ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
-		ImGui::SliderFloat3("TranslateSprite", &transformSprite.translate.x, 0.0f, WinApp::kClientWidth);
-		ImGui::End();
+
+		player->ImGui_Draw();
+
 		ImGui::Render();
 
 		Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
@@ -266,11 +258,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 		commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress());
 
 		commandList->SetPipelineState(graphicsPipeline->GetPipelineState(kBlendModeNone));
-		model->Draw(
+		player->Draw(
 			commandList,
 			viewProjectionMatrix,
 			directionalLightResource->GetGPUVirtualAddress(),
-			useMonstarBall ? textureSrvHandleGPU2 : textureSrvHandleGPU);
+			textureSrvHandleGPU2);
 
 		commandList->SetPipelineState(graphicsPipeline->GetPipelineState(static_cast<BlendMode>(spriteBlendMode)));
 		commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);
@@ -289,7 +281,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
 
-	delete model;
+	delete player;
+	delete playerModel;
 	delete graphicsPipeline;
 
 	dxCommon->Finalize();

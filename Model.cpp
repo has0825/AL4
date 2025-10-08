@@ -4,6 +4,7 @@
 #include <cassert>
 #include <fstream>
 #include <sstream>
+#include <Windows.h> // OutputDebugStringA のために追加
 
 // === このファイル内でのみ使用するヘルパー関数 ===
 MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const std::string& filename);
@@ -20,6 +21,11 @@ void Model::Initialize(
 	const std::string& directoryPath, const std::string& filename, ID3D12Device* device) {
 
 	ModelData modelData = LoadOjFile(directoryPath, filename);
+
+	// ★修正点: 頂点データがなければ処理を中断
+	if (modelData.vertices.empty()) {
+		return;
+	}
 	vertices_ = modelData.vertices;
 
 	vertexResource_ = CreateBufferResource(device, sizeof(VertexData) * vertices_.size());
@@ -52,6 +58,11 @@ void Model::Draw(
 	const Matrix4x4& viewProjectionMatrix,
 	D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress,
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {
+
+	// ★修正点: 頂点データがなければ描画しない
+	if (vertices_.empty()) {
+		return;
+	}
 
 	Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
 	wvpData_->WVP = Multiply(worldMatrix, viewProjectionMatrix);
@@ -86,6 +97,7 @@ MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const st
 	}
 	return materialData;
 }
+
 ModelData LoadOjFile(const std::string& directoryPath, const std::string& filename)
 {
 	ModelData modelData;
@@ -93,8 +105,17 @@ ModelData LoadOjFile(const std::string& directoryPath, const std::string& filena
 	std::vector<Vector3> normals;
 	std::vector<Vector2> texcoords;
 	std::string line;
-	std::ifstream file(directoryPath + "/" + filename);
-	assert(file.is_open());
+	std::string fullpath = directoryPath + "/" + filename;
+	std::ifstream file(fullpath);
+
+	// ★修正点: ファイルが開けなかった場合に警告を出す
+	if (!file.is_open()) {
+		std::string message = "Error: Cannot open model file: " + fullpath + "\n";
+		OutputDebugStringA(message.c_str());
+		assert(false);
+		return modelData; // 空のモデルデータを返す
+	}
+
 	while (std::getline(file, line)) {
 		std::string identifiler;
 		std::istringstream s(line);
