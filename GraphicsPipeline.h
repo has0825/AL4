@@ -4,6 +4,18 @@
 #include <wrl.h>
 #include <string>
 #include <fstream>
+#include <map>
+
+// ブレンドモードの定義
+enum BlendMode {
+    kBlendModeNone,         // ブレンドなし
+    kBlendModeNormal,       // 通常αブレンド
+    kBlendModeAdd,          // 加算
+    kBlendModeSubtract,     // 減算
+    kBlendModeMultiply,     // 乗算
+    kCountOfBlendMode,      // カウント用
+};
+
 
 // グラフィックスパイプライン管理クラス
 class GraphicsPipeline {
@@ -13,7 +25,7 @@ public:
 
     // ゲッター
     ID3D12RootSignature* GetRootSignature() const { return rootSignature_.Get(); }
-    ID3D12PipelineState* GetPipelineState() const { return pipelineState_.Get(); }
+    ID3D12PipelineState* GetPipelineState(BlendMode blendMode) const { return pipelineStates_[blendMode].Get(); }
 
 private:
     // シェーダーのコンパイル
@@ -26,6 +38,6 @@ private:
 
 private:
     Microsoft::WRL::ComPtr<ID3D12RootSignature> rootSignature_;
-    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineState_;
-    std::ofstream logStream_; // ログ出力用
+    Microsoft::WRL::ComPtr<ID3D12PipelineState> pipelineStates_[kCountOfBlendMode]; // 全ブレンドモード分のPSO
+    std::ofstream logStream_;
 };

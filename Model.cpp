@@ -1,9 +1,11 @@
 #include "Model.h"
+#include "MathUtil.h"
+#include "DataTypes.h"
 #include <cassert>
 #include <fstream>
 #include <sstream>
 
-// (LoadMaterialTemplateFile と LoadOjFile の実装は変更なし)
+// === このファイル内でのみ使用するヘルパー関数 ===
 MaterialData LoadMaterialTemplateFile(const std::string& directoryPath, const std::string& filename);
 ModelData LoadOjFile(const std::string& directoryPath, const std::string& filename);
 
@@ -42,12 +44,13 @@ void Model::Initialize(
 }
 
 void Model::Update() {
-	// 何もしない
+	// 将来的なアニメーション更新などで使用
 }
 
 void Model::Draw(
 	ID3D12GraphicsCommandList* commandList,
 	const Matrix4x4& viewProjectionMatrix,
+	D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress,
 	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {
 
 	Matrix4x4 worldMatrix = MakeAffineMatrix(transform.scale, transform.rotate, transform.translate);
@@ -58,8 +61,7 @@ void Model::Draw(
 	commandList->SetGraphicsRootConstantBufferView(0, materialResource_->GetGPUVirtualAddress());
 	commandList->SetGraphicsRootConstantBufferView(1, wvpResource_->GetGPUVirtualAddress());
 	commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandle);
-
-	// 修正: ライト設定処理をここから削除
+	commandList->SetGraphicsRootConstantBufferView(3, lightGpuAddress);
 
 	commandList->DrawInstanced(UINT(vertices_.size()), 1, 0, 0);
 }
