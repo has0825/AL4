@@ -30,6 +30,7 @@
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">MaxSpeed</Optimization>
       <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Development|x64'">true</WholeProgramOptimization>
     </ClCompile>
+    <ClCompile Include="MapChip.cpp" />
     <ClCompile Include="MathUtil.cpp" />
     <ClCompile Include="Model.cpp" />
     <ClCompile Include="Player.cpp" />
@@ -67,6 +68,7 @@
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
     <ClInclude Include="GraphicsPipeline.h" />
     <ClInclude Include="Input.h" />
+    <ClInclude Include="MapChip.h" />
     <ClInclude Include="MathTypes.h" />
     <ClInclude Include="MathUtil.h" />
     <ClInclude Include="Model.h" />

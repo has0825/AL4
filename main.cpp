@@ -39,8 +39,9 @@
 #include "DataTypes.h"
 #include "Input.h"
 #include "Player.h"
+#include "MapChip.h"
 
-// === このファイルに残っているヘルパー関数 ===
+// ... (ヘルパー関数は変更なし) ...
 static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception)
 {
 	SYSTEMTIME time;
@@ -96,6 +97,7 @@ struct D3DResourceLeakChecker {
 		}
 	}
 };
+
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 {
 	D3DResourceLeakChecker leakChecker;
@@ -122,9 +124,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 	ID3D12GraphicsCommandList* commandList = dxCommon->GetCommandList();
 
+	MapChip* mapChip = new MapChip();
+	mapChip->Initialize();
+
+	// 🔽🔽🔽 **ここを正しいパスに修正しました** 🔽🔽🔽
+	mapChip->Load("resources/map.csv");
+	// 🔼🔼🔼 ********************************** 🔼🔼🔼
+
 	Model* playerModel = Model::Create("resources/player", "player.obj", device);
 	Player* player = new Player();
-	player->Initialize(playerModel);
+	player->Initialize(playerModel, mapChip);
 
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
@@ -135,18 +144,34 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	Microsoft::WRL::ComPtr<ID3D12Resource> playerTextureResource = CreateTextureResource(device, playerMetadata);
 	Microsoft::WRL::ComPtr<ID3D12Resource> playerIntermediateResource = UploadTextureData(playerTextureResource.Get(), playerMipImages, device, commandList);
 
+	// ブロックのテクスチャをロード
+	std::string blockTexturePath = "resources/block/block.png";
+	DirectX::ScratchImage blockMipImages = LoadTexture(blockTexturePath);
+	const DirectX::TexMetadata& blockMetadata = blockMipImages.GetMetadata();
+	Microsoft::WRL::ComPtr<ID3D12Resource> blockTextureResource = CreateTextureResource(device, blockMetadata);
+	Microsoft::WRL::ComPtr<ID3D12Resource> blockIntermediateResource = UploadTextureData(blockTextureResource.Get(), blockMipImages, device, commandList);
+
 	const uint32_t descriptorSizeSRV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	// プレイヤーテクスチャ用のSRVを作成
+	// プレイヤーテクスチャ用のSRVを作成（ヒープの2番目）
 	D3D12_SHADER_RESOURCE_VIEW_DESC playerSrvDesc{};
 	playerSrvDesc.Format = playerMetadata.format;
 	playerSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	playerSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 	playerSrvDesc.Texture2D.MipLevels = UINT(playerMetadata.mipLevels);
-	// SRVをヒープの2番目に作成（1番目はImGuiが使用）
 	D3D12_CPU_DESCRIPTOR_HANDLE playerTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 2);
 	D3D12_GPU_DESCRIPTOR_HANDLE playerTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 2);
 	device->CreateShaderResourceView(playerTextureResource.Get(), &playerSrvDesc, playerTextureSrvHandleCPU);
+
+	// ブロックテクスチャ用のSRVを作成（ヒープの3番目）
+	D3D12_SHADER_RESOURCE_VIEW_DESC blockSrvDesc{};
+	blockSrvDesc.Format = blockMetadata.format;
+	blockSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	blockSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	blockSrvDesc.Texture2D.MipLevels = UINT(blockMetadata.mipLevels);
+	D3D12_CPU_DESCRIPTOR_HANDLE blockTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 3);
+	D3D12_GPU_DESCRIPTOR_HANDLE blockTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 3);
+	device->CreateShaderResourceView(blockTextureResource.Get(), &blockSrvDesc, blockTextureSrvHandleCPU);
 
 	// ライトの初期化
 	Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
@@ -160,7 +185,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGpuResource = CreateBufferResource(device, sizeof(CameraForGpu));
 	CameraForGpu* cameraForGpuData = nullptr;
 	cameraForGpuResource->Map(0, nullptr, reinterpret_cast<void**>(&cameraForGpuData));
-	Transform cameraTransform{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
+	Transform cameraTransform{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 7.5f, 3.5f, -15.0f } };
 
 	// ImGuiの初期化
 	IMGUI_CHECKVERSION();
@@ -175,49 +200,43 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	// メインループ
 	while (!winApp->IsEndRequested()) {
 		winApp->ProcessMessage();
-
 		Input::GetInstance()->Update();
 		player->Update();
-
 		ImGui_ImplDX12_NewFrame();
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
-
 		player->ImGui_Draw();
-
 		ImGui::Render();
-
-		// カメラ行列の計算
 		Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
 		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, (float)WinApp::kClientWidth / (float)WinApp::kClientHeight, 0.1f, 100.0f);
 		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
 		cameraForGpuData->worldPosition = cameraTransform.translate;
-
-		// ライトの方向を正規化
 		directionalLightData->direction = Normalize(directionalLightData->direction);
-
 		dxCommon->PreDraw();
-
 		commandList->SetGraphicsRootSignature(graphicsPipeline->GetRootSignature());
 		ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get() };
 		commandList->SetDescriptorHeaps(1, descriptorHeaps);
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
 		commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
 		commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress());
-
-		// プレイヤーの描画
 		commandList->SetPipelineState(graphicsPipeline->GetPipelineState(kBlendModeNone));
+
+		// マップの描画（ブロックのテクスチャハンドルを渡す）
+		mapChip->Draw(
+			commandList,
+			viewProjectionMatrix,
+			directionalLightResource->GetGPUVirtualAddress(),
+			blockTextureSrvHandleGPU);
+
+		// プレイヤーの描画（プレイヤーのテクスチャハンドルを渡す）
 		player->Draw(
 			commandList,
 			viewProjectionMatrix,
 			directionalLightResource->GetGPUVirtualAddress(),
-			playerTextureSrvHandleGPU); // プレイヤーのテクスチャハンドルを渡す
+			playerTextureSrvHandleGPU);
 
-		// ImGuiの描画
 		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
-
 		dxCommon->PostDraw();
 	}
 
@@ -225,14 +244,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
 
+	delete mapChip;
 	delete player;
 	delete playerModel;
 	delete graphicsPipeline;
 
 	dxCommon->Finalize();
-
 	CoUninitialize();
-
 	winApp->Finalize();
 
 	return 0;

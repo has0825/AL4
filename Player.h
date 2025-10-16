@@ -2,10 +2,11 @@
 #include "Model.h"
 #include "Input.h"
 #include "externals/imgui/imgui.h"
+#include "MapChip.h"
 
 class Player {
 public:
-    void Initialize(Model* model);
+    void Initialize(Model* model, MapChip* mapChip);
     void Update();
     void Draw(
         ID3D12GraphicsCommandList* commandList,
@@ -15,8 +16,20 @@ public:
     void ImGui_Draw();
 
 private:
+    // 壁に触れている方向を管理
+    enum class WallTouchSide {
+        None,
+        Left,
+        Right
+    };
+
     Model* model_ = nullptr;
+    MapChip* mapChip_ = nullptr;
     Transform transform_{};
     Vector3 velocity_{};
-    int jumpCount_ = 0;
+
+    // 状態管理変数
+    bool onGround_ = false;
+    WallTouchSide wallTouch_ = WallTouchSide::None;
+    float jumpBufferTimer_ = 0.0f; // ジャンプの先行入力タイマー
 };
