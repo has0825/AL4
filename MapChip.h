@@ -3,14 +3,21 @@
 #include <string>
 #include "Model.h"
 #include "MathTypes.h"
+#include <d3d12.h> // ID3D12Device を使うために追加
 
 class MapChip {
 public:
     // マップチップのサイズ（定数）
-    static const float kBlockSize;
+    static const float kBlockSize; // (定義は .cpp で)
+
+    // デストラクタ
+    ~MapChip();
 
     void Initialize();
-    void Load(const std::string& filePath);
+
+    // 引数に device を追加
+    void Load(const std::string& filePath, ID3D12Device* device);
+
     void Draw(
         ID3D12GraphicsCommandList* commandList,
         const Matrix4x4& viewProjectionMatrix,
@@ -28,5 +35,5 @@ public:
 
 private:
     std::vector<std::vector<int>> data_;
-    Model* model_ = nullptr;
+    std::vector<Model*> models_;
 };
