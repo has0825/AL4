@@ -15,6 +15,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Camera.cpp" />
     <ClCompile Include="D3D12Util.cpp" />
     <ClCompile Include="DirectXCommon.cpp" />
     <ClCompile Include="externals\imgui\imgui.cpp" />
@@ -55,6 +56,7 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Camera.h" />
     <ClInclude Include="D3D12Util.h" />
     <ClInclude Include="DataTypes.h" />
     <ClInclude Include="DirectXCommon.h" />

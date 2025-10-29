@@ -40,8 +40,9 @@
 #include "Input.h"
 #include "Player.h"
 #include "MapChip.h"
+#include "Camera.h" // Camera.h をインクルード
 
-// (ヘルパー関数... 省略しません)
+// ヘルパー関数 (省略なし)
 static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception)
 {
     SYSTEMTIME time;
@@ -119,10 +120,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     ID3D12GraphicsCommandList* commandList = dxCommon->GetCommandList();
 
     MapChip* mapChip = new MapChip();
-    // (Initialize() は Load() に統合)
-
     Model* playerModel = Model::Create("Resources/player", "player.obj", device);
-
     Player* player = new Player();
     player->Initialize(playerModel, mapChip);
 
@@ -181,14 +179,14 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     directionalLightData->direction = Normalize({ 0.0f, -1.0f, 0.0f });
     directionalLightData->intensity = 1.0f;
 
-    // カメラの初期化
+    // Camera クラスを作成・初期化
+    Camera* camera = new Camera();
+    camera->Initialize(); // Initialize 内で固定位置・角度が設定される
+
+    // カメラのワールド座標をGPUに送るためのリソース
     Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGpuResource = CreateBufferResource(device, sizeof(CameraForGpu));
     CameraForGpu* cameraForGpuData = nullptr;
     cameraForGpuResource->Map(0, nullptr, reinterpret_cast<void**>(&cameraForGpuData));
-
-    // 🔽🔽🔽 **カメラ座標の X を 4.8f から 1.0f に変更** 🔽🔽🔽
-    Transform cameraTransform{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 4.0f, 2.4f, -18.0f } };
-    // 🔼🔼🔼 **************************************************** 🔼🔼🔼
 
     // ImGuiの初期化
     IMGUI_CHECKVERSION();
@@ -205,41 +203,49 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         winApp->ProcessMessage();
         Input::GetInstance()->Update();
         player->Update();
+
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+
         player->ImGui_Draw();
+
+        // camera->ImGui_Draw() の呼び出しを削除済み
+
         ImGui::Render();
-        Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
-        Matrix4x4 viewMatrix = Inverse(cameraMatrix);
 
-        Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, (float)WinApp::kClientWidth / (float)WinApp::kClientHeight, 0.1f, 100.0f);
+        // camera->UpdateMatrix() の呼び出しを削除済み
 
-        Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
-        cameraForGpuData->worldPosition = cameraTransform.translate;
+        // 行列は Camera から取得するだけ
+        const Matrix4x4& viewProjectionMatrix = camera->GetViewProjectionMatrix();
+
+        // GPUに送るカメラ座標を更新
+        cameraForGpuData->worldPosition = camera->GetTransform().translate;
+
         directionalLightData->direction = Normalize(directionalLightData->direction);
         dxCommon->PreDraw();
+
         commandList->SetGraphicsRootSignature(graphicsPipeline->GetRootSignature());
         ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get() };
         commandList->SetDescriptorHeaps(1, descriptorHeaps);
         commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-        commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress());
+        commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress()); // カメラ座標CBVはそのまま
         commandList->SetPipelineState(graphicsPipeline->GetPipelineState(kBlendModeNone));
 
-        // マップの描画 (block のハンドルを渡す)
+        // マップの描画 (取得した viewProjectionMatrix を使う)
         mapChip->Draw(
             commandList,
-            viewProjectionMatrix,
+            viewProjectionMatrix, // ◀ Cameraから取得した行列
             directionalLightResource->GetGPUVirtualAddress(),
-            blockTextureSrvHandleGPU); // ◀ block のハンドル
+            blockTextureSrvHandleGPU);
 
-        // プレイヤーの描画 (player のハンドルを渡す)
+        // プレイヤーの描画 (取得した viewProjectionMatrix を使う)
         player->Draw(
             commandList,
-            viewProjectionMatrix,
+            viewProjectionMatrix, // ◀ Cameraから取得した行列
             directionalLightResource->GetGPUVirtualAddress(),
-            playerTextureSrvHandleGPU); // ◀ player のハンドル
+            playerTextureSrvHandleGPU);
 
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
         dxCommon->PostDraw();
@@ -248,10 +254,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     ImGui_ImplDX12_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
+
     delete mapChip;
     delete player;
     delete playerModel;
     delete graphicsPipeline;
+    delete camera; // Camera を delete する
     dxCommon->Finalize();
     CoUninitialize();
     winApp->Finalize();
