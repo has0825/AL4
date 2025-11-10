@@ -13,7 +13,7 @@ void Player::Initialize(Model* model, MapChip* mapChip) {
     mapChip_ = mapChip;
     transform_.scale = { 0.4f, 0.4f, 0.4f }; // Note: Scale is visual, collision uses kPlayerHalfSize
     transform_.rotate = { 0.0f, 0.0f, 0.0f };
-    transform_.translate = { 3.0f, 5.0f, 0.0f };
+    transform_.translate = { 2.0f, 9.0f, 0.0f };
     velocity_ = { 0.0f, 0.0f, 0.0f };
     onGround_ = false;
     wallTouch_ = WallTouchSide::None;
@@ -34,7 +34,16 @@ void Player::Update() {
     const float kPlayerHalfSize = 0.2f; // 0.20f から 0.4f に戻す
     // 🔼🔼🔼 ************************************ 🔼🔼🔼
 
-    // ▼▼▼ ステップ1: 物理演算と衝突判定を行い、現在の状態を確定させる ▼▼▼
+    // ▼▼▼ ステップ1: 入力を処理して、このフレームのX方向の基本速度を決定する ▼▼▼
+    float moveX = 0.0f;
+    if (input->IsKeyDown('D')) { moveX = kMoveSpeed; }
+    if (input->IsKeyDown('A')) { moveX = -kMoveSpeed; }
+
+    // 基本のX速度を設定 (壁ジャンプで上書きされる可能性あり)
+    velocity_.x = moveX;
+
+
+    // ▼▼▼ ステップ2: 物理演算と衝突判定 (Y -> X の順) ▼▼▼
 
     // 壁滑り or 重力
     if (wallTouch_ != WallTouchSide::None && !onGround_ && velocity_.y < -kWallSlideSpeed) {
@@ -47,19 +56,17 @@ void Player::Update() {
     wallTouch_ = WallTouchSide::None; // フレーム開始時にリセット
 
     // Y方向の移動と衝突判定
-    Vector3 position = transform_.translate;
-    position.y += velocity_.y;
+    Vector3 position = transform_.translate; // 現在位置を取得
+    position.y += velocity_.y; // Y方向に移動
 
     float playerTop = position.y + kPlayerHalfSize;
     float playerBottom = position.y - kPlayerHalfSize;
-    float playerLeft = transform_.translate.x - kPlayerHalfSize;
-    float playerRight = transform_.translate.x + kPlayerHalfSize;
+    float playerLeft = transform_.translate.x - kPlayerHalfSize;  // Y判定では「現在のX」を使う
+    float playerRight = transform_.translate.x + kPlayerHalfSize; // Y判定では「現在のX」を使う
 
     if (velocity_.y < 0) { // 落下中の下方向判定
         if (mapChip_->CheckCollision({ playerLeft, playerBottom, 0 }) || mapChip_->CheckCollision({ playerRight, playerBottom, 0 })) {
-            // 🔽🔽🔽 **- 0.001f の補正を削除** 🔽🔽🔽
             position.y = floor(playerBottom / MapChip::kBlockSize) * MapChip::kBlockSize + MapChip::kBlockSize + kPlayerHalfSize;
-            // 🔼🔼🔼 ************************** 🔼🔼🔼
             velocity_.y = 0;
             onGround_ = true;
         }
@@ -69,44 +76,52 @@ void Player::Update() {
             velocity_.y = 0;
         }
     }
-    transform_.translate.y = position.y; // Y座標を確定
+    // Y座標が確定 (position.y)
 
     // X方向の移動と衝突判定
-    position = transform_.translate; // Y座標が確定した現在位置
-    position.x += velocity_.x;       // X方向に移動した後の予測位置
+    position.x += velocity_.x; // Yが確定した position に X の移動を加える
 
-    playerLeft = position.x - kPlayerHalfSize;   // 予測X位置での左端
-    playerRight = position.x + kPlayerHalfSize;  // 予測X位置での右端
-    playerTop = position.y + kPlayerHalfSize;    // 確定Y位置での上端
-    playerBottom = position.y - kPlayerHalfSize; // 確定Y位置での下端
+    playerLeft = position.x - kPlayerHalfSize;   // X判定では「予測X」を使う
+    playerRight = position.x + kPlayerHalfSize;  // X判定では「予測X」を使う
+    playerTop = position.y + kPlayerHalfSize;    // X判定では「確定Y」を使う
+    playerBottom = position.y - kPlayerHalfSize; // X判定では「確定Y」を使う
+
+    // ▼▼▼ ★★★ ここが今回の修正点 ★★★ ▼▼▼
+    // Y座標のチェック位置を、プレイヤーの状態(地上/空中)によって切り替える
+
+    // (A) 空中にいる時用のY座標 (壁抜け対策: ブロックの中を見る)
+    float checkY_Bottom_ForWall = playerBottom - 0.001f;
+    // (B) 地上にいる時用のY座標 (地面誤認対策: ブロックの上を見る)
+    float checkY_Bottom_ForMove = playerBottom + 0.001f;
+
+    // プレイヤーの上端 (これは共通)
+    float checkY_Top = playerTop - 0.001f;
 
     if (velocity_.x < 0) { // 左移動
-        if (mapChip_->CheckCollision({ playerLeft, playerTop, 0 }) || mapChip_->CheckCollision({ playerLeft, playerBottom, 0 })) {
-            // 衝突したら壁の外側に位置を補正 (kPlayerHalfSize=0.4f で動いていたロジック)
-            position.x = floor(playerLeft / MapChip::kBlockSize) * MapChip::kBlockSize + MapChip::kBlockSize + kPlayerHalfSize;
+        // onGround_ の状態に応じて (A) か (B) を選択
+        float checkY_Bottom = onGround_ ? checkY_Bottom_ForMove : checkY_Bottom_ForWall;
+
+        if (mapChip_->CheckCollision({ playerLeft, checkY_Top, 0 }) || mapChip_->CheckCollision({ playerLeft, checkY_Bottom, 0 })) {
+            position.x = floor(playerLeft / MapChip::kBlockSize) * MapChip::kBlockSize + MapChip::kBlockSize + kPlayerHalfSize + 0.001f;
             if (!onGround_) wallTouch_ = WallTouchSide::Left;
-            // 速度リセットは不要
+            velocity_.x = 0; // 壁に当たったらX速度をリセット
         }
     } else if (velocity_.x > 0) { // 右移動
-        if (mapChip_->CheckCollision({ playerRight, playerTop, 0 }) || mapChip_->CheckCollision({ playerRight, playerBottom, 0 })) {
-            // 衝突したら壁の外側に位置を補正 (kPlayerHalfSize=0.4f で動いていたロジック)
-            position.x = floor(playerRight / MapChip::kBlockSize) * MapChip::kBlockSize - kPlayerHalfSize;
+        // onGround_ の状態に応じて (A) か (B) を選択
+        float checkY_Bottom = onGround_ ? checkY_Bottom_ForMove : checkY_Bottom_ForWall;
+
+        if (mapChip_->CheckCollision({ playerRight, checkY_Top, 0 }) || mapChip_->CheckCollision({ playerRight, checkY_Bottom, 0 })) {
+            position.x = floor(playerRight / MapChip::kBlockSize) * MapChip::kBlockSize - kPlayerHalfSize - 0.001f;
             if (!onGround_) wallTouch_ = WallTouchSide::Right;
-            // 速度リセットは不要
+            velocity_.x = 0; // 壁に当たったらX速度をリセット
         }
     }
-    transform_.translate.x = position.x; // X座標を確定
+
+    // 最終的な座標を transform_ に反映
+    transform_.translate = position;
 
 
-    // ▼▼▼ ステップ2: 確定した状態を元に、キー入力を処理して次のフレームの速度を決める ▼▼▼
-
-    float moveX = 0.0f;
-    if (input->IsKeyDown('D')) { moveX = kMoveSpeed; }
-    if (input->IsKeyDown('A')) { moveX = -kMoveSpeed; }
-
-    // 🔽🔽🔽 **速度更新をシンプルに (動いていたコードのロジック)** 🔽🔽🔽
-    velocity_.x = moveX;
-    // 🔼🔼🔼 ************************************************ 🔼🔼🔼
+    // ▼▼▼ ステップ3: 確定した状態を元に、ジャンプ処理を行う ▼▼▼
 
     // ジャンプの先行入力処理
     if (jumpBufferTimer_ > 0.0f) {
@@ -123,16 +138,16 @@ void Player::Update() {
             jumpBufferTimer_ = 0.0f;
             onGround_ = false; // ジャンプしたら接地解除
         }
-        // 壁キック (動いていたコードのロジック)
+        // 壁キック (入力 moveX が必要)
         else if (wallTouch_ == WallTouchSide::Left && moveX >= 0) {
             velocity_.y = kWallJumpPowerY;
-            velocity_.x = kWallJumpPowerX; // 右へキック
+            velocity_.x = kWallJumpPowerX; // ★ここでX速度が上書きされる
             jumpBufferTimer_ = 0.0f;
             transform_.rotate.y = -M_PI / 2.0f; // 右向き
             wallTouch_ = WallTouchSide::None; // 壁接触解除
         } else if (wallTouch_ == WallTouchSide::Right && moveX <= 0) {
             velocity_.y = kWallJumpPowerY;
-            velocity_.x = -kWallJumpPowerX; // 左へキック
+            velocity_.x = -kWallJumpPowerX; // ★ここでX速度が上書きされる
             jumpBufferTimer_ = 0.0f;
             transform_.rotate.y = M_PI / 2.0f; // 左向き
             wallTouch_ = WallTouchSide::None; // 壁接触解除
@@ -149,6 +164,7 @@ void Player::Update() {
     }
     // 空中での向き変更を追加 (壁接触時以外)
     else if (wallTouch_ == WallTouchSide::None) {
+        // 最終的な速度(velocity_.x)で判断
         if (velocity_.x > 0.01f) {
             transform_.rotate.y = -M_PI / 2.0f; // 右向き
         } else if (velocity_.x < -0.01f) {

@@ -35,6 +35,7 @@
     <ClCompile Include="MathUtil.cpp" />
     <ClCompile Include="Model.cpp" />
     <ClCompile Include="Player.cpp" />
+    <ClCompile Include="Trap.cpp" />
     <ClCompile Include="WinApp.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -75,6 +76,7 @@
     <ClInclude Include="MathUtil.h" />
     <ClInclude Include="Model.h" />
     <ClInclude Include="Player.h" />
+    <ClInclude Include="Trap.h" />
     <ClInclude Include="WinApp.h" />
   </ItemGroup>
   <ItemGroup>
