@@ -1,4 +1,6 @@
-﻿#define _USE_MATH_DEFINES
+﻿// main.cpp (完全版・Title/Clear/GameOverシーンでOBJ描画停止、青背景に)
+
+#define _USE_MATH_DEFINES
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -30,6 +32,8 @@
 #pragma comment(lib, "dxguid.lib")
 #pragma comment(lib, "dxcompiler.lib")
 
+#include <algorithm> // resourceRoot をやめたので不要（ここでは削除済み）
+
 #include "WinApp.h"
 #include "DirectXCommon.h"
 #include "GraphicsPipeline.h"
@@ -45,7 +49,7 @@
 #include "FallingBlock.h" // 新規作成した FallingBlock.h
 
 
-// ヘルパー関数 (省略なし)
+// ヘルパー関数 (変更なし)
 static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception)
 {
     SYSTEMTIME time;
@@ -104,15 +108,17 @@ struct D3DResourceLeakChecker {
 
 // ★ GameScene の enum
 enum class GameScene {
-    Title,      // タイトルシーン
-    GamePlay,   // ゲームプレイシーン
-    GameOver,   // ゲームオーバーシーン
-    GameClear   // ゲームクリアシーン
+    Title,       // タイトルシーン
+    GamePlay,    // ゲームプレイシーン
+    GameOver,    // ゲームオーバーシーン
+    GameClear    // ゲームクリアシーン
 };
 
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 {
+    // ★★★ resourceRoot 生成ロジックを削除（変更なし） ★★★
+
     D3DResourceLeakChecker leakChecker;
     WinApp* winApp = WinApp::GetInstance();
     winApp->Initialize();
@@ -130,27 +136,34 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     graphicsPipeline->Initialize(device);
     ID3D12GraphicsCommandList* commandList = dxCommon->GetCommandList();
 
-    // --- ▼▼▼ リソースの宣言 (★ 変更： new は後回し) ▼▼▼ ---
+    // --- ▼▼▼ リソースの宣言 (変更なし) ▼▼▼ ---
     MapChip* mapChip = nullptr;
-    Model* playerModel = nullptr; 
+    Model* playerModel = nullptr;
     Player* player = nullptr;
 
     std::vector<Trap*> traps_;
     std::vector<FallingBlock*> fallingBlocks_;
     Model* goalModel_ = nullptr;
+
+    // ★★★ 変更 (A)： Model* は宣言のみ。Create は呼ばない ★★★
+    // Model* titleModel = nullptr;
+    // Model* clearModel = nullptr;
+    // Model* gameOverModel = nullptr;
+    // (↑これらの変数も不要になりますが、一旦コメントアウトで残します)
     // --- ▲▲▲ リソースの宣言 ▲▲▲ ---
 
 
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
-    // プレイヤーのテクスチャをロード (変更なし)
+    // ★★★ 変更 (B) ： テクスチャパスは相対パス (変更なし) ★★★
+    // プレイヤーのテクスチャをロード
     std::string playerTexturePath = "Resources/player/player.png";
     DirectX::ScratchImage playerMipImages = LoadTexture(playerTexturePath);
     const DirectX::TexMetadata& playerMetadata = playerMipImages.GetMetadata();
     Microsoft::WRL::ComPtr<ID3D12Resource> playerTextureResource = CreateTextureResource(device, playerMetadata);
     Microsoft::WRL::ComPtr<ID3D12Resource> playerIntermediateResource = UploadTextureData(playerTextureResource.Get(), playerMipImages, device, commandList);
 
-    // "block.png" を読み込む (変更なし)
+    // "block.png" を読み込む
     std::string blockTexturePath = "Resources/block/block.png";
     DirectX::ScratchImage blockMipImages = LoadTexture(blockTexturePath);
     if (blockMipImages.GetImageCount() == 0) {
@@ -161,7 +174,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     Microsoft::WRL::ComPtr<ID3D12Resource> blockTextureResource = CreateTextureResource(device, blockMetadata);
     Microsoft::WRL::ComPtr<ID3D12Resource> blockIntermediateResource = UploadTextureData(blockTextureResource.Get(), blockMipImages, device, commandList);
 
-    // "cube.jpg" を読み込む (変更なし)
+    // "cube.jpg" を読み込む
     std::string cubeTexturePath = "Resources/cube/cube.jpg";
     DirectX::ScratchImage cubeMipImages = LoadTexture(cubeTexturePath);
     if (cubeMipImages.GetImageCount() == 0) {
@@ -172,10 +185,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     Microsoft::WRL::ComPtr<ID3D12Resource> cubeTextureResource = CreateTextureResource(device, cubeMetadata);
     Microsoft::WRL::ComPtr<ID3D12Resource> cubeIntermediateResource = UploadTextureData(cubeTextureResource.Get(), cubeMipImages, device, commandList);
 
-    
+
     const uint32_t descriptorSizeSRV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    // プレイヤーテクスチャ用のSRVを作成（ヒープの2番目） (変更なし)
+    // プレイヤーテクスチャ用のSRVを作成（ヒープの2番目）
     D3D12_SHADER_RESOURCE_VIEW_DESC playerSrvDesc{};
     playerSrvDesc.Format = playerMetadata.format;
     playerSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -185,7 +198,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     D3D12_GPU_DESCRIPTOR_HANDLE playerTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 2);
     device->CreateShaderResourceView(playerTextureResource.Get(), &playerSrvDesc, playerTextureSrvHandleCPU);
 
-    // block.png の SRV を作成 (ヒープの3番目) (変更なし)
+    // block.png の SRV を作成 (ヒープの3番目)
     D3D12_SHADER_RESOURCE_VIEW_DESC blockSrvDesc{};
     blockSrvDesc.Format = blockMetadata.format;
     blockSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -195,7 +208,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     D3D12_GPU_DESCRIPTOR_HANDLE blockTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 3);
     device->CreateShaderResourceView(blockTextureResource.Get(), &blockSrvDesc, blockTextureSrvHandleCPU);
 
-    // cube.jpg の SRV を作成 (ヒープの4番目) (変更なし)
+    // cube.jpg の SRV を作成 (ヒープの4番目)
     D3D12_SHADER_RESOURCE_VIEW_DESC cubeSrvDesc{};
     cubeSrvDesc.Format = cubeMetadata.format;
     cubeSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
@@ -205,12 +218,37 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     D3D12_GPU_DESCRIPTOR_HANDLE cubeTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 4);
     device->CreateShaderResourceView(cubeTextureResource.Get(), &cubeSrvDesc, cubeTextureSrvHandleCPU);
 
-    // (★ mapChip->Load は GamePlay 初期化へ移動)
-    
-    // (★ トラップ生成は GamePlay 初期化へ移動)
+    // "white1x1.png" を読み込む (Title, Clear, GameOver で共通使用) (変更なし)
+    std::string whiteTexturePath = "Resources/Title/white1x1.png"; // (Titleフォルダにあると仮定)
+    DirectX::ScratchImage whiteMipImages = LoadTexture(whiteTexturePath);
+    if (whiteMipImages.GetImageCount() == 0) {
+        OutputDebugStringA("ERROR: Failed to load white1x1.png!\n");
+        assert(false && "Failed to load white1x1.png");
+    }
+    const DirectX::TexMetadata& whiteMetadata = whiteMipImages.GetMetadata();
+    Microsoft::WRL::ComPtr<ID3D12Resource> whiteTextureResource = CreateTextureResource(device, whiteMetadata);
+    Microsoft::WRL::ComPtr<ID3D12Resource> whiteIntermediateResource = UploadTextureData(whiteTextureResource.Get(), whiteMipImages, device, commandList);
 
+    // white1x1.png の SRV を作成 (ヒープの5番目)
+    D3D12_SHADER_RESOURCE_VIEW_DESC whiteSrvDesc{};
+    whiteSrvDesc.Format = whiteMetadata.format;
+    whiteSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    whiteSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    whiteSrvDesc.Texture2D.MipLevels = UINT(whiteMetadata.mipLevels);
+    D3D12_CPU_DESCRIPTOR_HANDLE whiteTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 5); // 5番目
+    D3D12_GPU_DESCRIPTOR_HANDLE whiteTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 5); // 5番目
+    device->CreateShaderResourceView(whiteTextureResource.Get(), &whiteSrvDesc, whiteTextureSrvHandleCPU);
+
+
+    // (★ mapChip->Load は GamePlay 初期化へ移動)
+
+    // ★★★ 変更 (C) ： Model::Create はすべて削除 ★★★
+    // titleModel = Model::Create("Resources/Title", "Title.obj", device); // 削除
+    // clearModel = Model::Create("Resources/Clear", "Clear.obj", device); // 削除
+    // gameOverModel = Model::Create("Resources/GameOver", "GameOver.obj", device); // 削除
+
+    // (★ トラップ生成は GamePlay 初期化へ移動)
     // (★ FallingBlock 生成は GamePlay 初期化へ移動)
-    
     // (★ Goal 生成は GamePlay 初期化へ移動)
 
 
@@ -224,7 +262,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     // Camera クラスを作成・初期化 (変更なし)
     Camera* camera = new Camera();
-    camera->Initialize(); 
+    camera->Initialize();
 
     // カメラのワールド座標をGPUに送るためのリソース (変更なし)
     Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGpuResource = CreateBufferResource(device, sizeof(CameraForGpu));
@@ -242,13 +280,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 
-    // --- ▼▼▼ ★ 追加 ★ ▼▼▼ ---
     GameScene currentScene = GameScene::Title; // 初期シーン
     bool isGameInitialized = false; // ゲームリソースが初期化されたか
     bool isLoadingNextMap = false; // (GamePlay 内で使う)
-    // --- ▲▲▲ ★ 追加 ★ ▲▲▲ ---
 
-    // ★ ゲームプレイリソースを解放するラムダ関数
+    // ★ ゲームプレイリソースを解放するラムダ関数 (変更なし)
     auto cleanupGameResources = [&]() {
         delete mapChip;
         mapChip = nullptr;
@@ -271,40 +307,40 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         goalModel_ = nullptr;
 
         isGameInitialized = false; // 未初期化状態に戻す
-    };
+        };
 
 
     // メインループ
     while (!winApp->IsEndRequested()) {
         winApp->ProcessMessage();
         Input::GetInstance()->Update();
-        Input* input = Input::GetInstance(); // わかりやすくするため
+        Input* input = Input::GetInstance(); // 修正済み
 
-        // ImGuiフレーム開始 (共通)
+        // ImGuiフレーム開始 (共通) (変更なし)
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        // --- ▼▼▼ ★ 変更： シーンベースの更新処理 ▼▼▼ ---
+        // --- ▼▼▼ シーンベースの更新処理 ▼▼▼ ---
         switch (currentScene) {
 
-        // ========================================================
+            // ========================================================
         case GameScene::Title:
         {
-            // --- 更新 (Title) ---
-            if (input->IsKeyPressed(VK_RETURN)) { // Enterキー
+            // --- 更新 (Title) (変更なし) ---
+            if (input->IsKeyDown(VK_RETURN)) { // (押された瞬間)
                 currentScene = GameScene::GamePlay;
             }
 
-            // --- 描画 (Title) ---
+            // --- 描画 (Title) (変更なし) ---
             ImGui::Begin("TITLE SCREEN");
-            ImVec2 windowSize(300, 120); // 少し縦幅を広げる
-            ImGui::SetWindowSize(windowSize); 
+            ImVec2 windowSize(300, 120);
+            ImGui::SetWindowSize(windowSize);
             ImGui::SetWindowPos(ImVec2(
                 (WinApp::kClientWidth - windowSize.x) * 0.5f,
                 (WinApp::kClientHeight - windowSize.y) * 0.5f
-            )); 
-            ImGui::Text("My Awesome Game"); // (ゲームタイトルは適宜変更してください)
+            ));
+            ImGui::Text("My Awesome Game");
             ImGui::Separator();
             ImGui::Text("Press ENTER to Start");
             ImGui::End();
@@ -319,10 +355,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         {
             // --- ★ ゲームプレイリソースの初期化 (初回のみ) ★ ---
             if (!isGameInitialized) {
-                
-                // (元々 WinMain の冒頭にあった初期化処理をここに移動)
-                
+
                 mapChip = new MapChip();
+                // ★★★ 変更 (D) ： パスを相対パスに戻す ★★★
                 playerModel = Model::Create("Resources/player", "player.obj", device);
                 player = new Player();
 
@@ -334,48 +369,36 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                 auto csvYToWorldY = [&](int csvY) {
                     return (static_cast<float>(mapHeight - 1) - static_cast<float>(csvY)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
                     };
-
-                // 1. 左から来るトラップ (CSV y=4, 5, 6)
+                // (トラップ生成 ... 省略なし)
                 float stopMarginNormal = MapChip::kBlockSize * 1.0f;
-
                 Trap* trapL1 = new Trap();
                 trapL1->Initialize(device, csvYToWorldY(4), Trap::AttackSide::FromLeft, stopMarginNormal);
                 traps_.push_back(trapL1);
-
                 Trap* trapL2 = new Trap();
                 trapL2->Initialize(device, csvYToWorldY(5), Trap::AttackSide::FromLeft, stopMarginNormal);
                 traps_.push_back(trapL2);
-
                 Trap* trapL3 = new Trap();
                 trapL3->Initialize(device, csvYToWorldY(6), Trap::AttackSide::FromLeft, stopMarginNormal);
                 traps_.push_back(trapL3);
-
-                // 2. 右から来るトラップ (通常) (CSV y=8, 9, 10)
                 Trap* trapR1 = new Trap();
                 trapR1->Initialize(device, csvYToWorldY(8), Trap::AttackSide::FromRight, stopMarginNormal);
                 traps_.push_back(trapR1);
-
                 Trap* trapR2 = new Trap();
                 trapR2->Initialize(device, csvYToWorldY(9), Trap::AttackSide::FromRight, stopMarginNormal);
                 traps_.push_back(trapR2);
-
                 Trap* trapR3 = new Trap();
                 trapR3->Initialize(device, csvYToWorldY(10), Trap::AttackSide::FromRight, stopMarginNormal);
                 traps_.push_back(trapR3);
-
-                // 3. 右から来るトラップ (Short) (CSV y=12, 13)
                 float stopMarginShort = MapChip::kBlockSize * 0.2f;
-
                 Trap* trapRS1 = new Trap();
                 trapRS1->Initialize(device, csvYToWorldY(12), Trap::AttackSide::FromRight, stopMarginShort);
                 traps_.push_back(trapRS1);
-
                 Trap* trapRS2 = new Trap();
                 trapRS2->Initialize(device, csvYToWorldY(13), Trap::AttackSide::FromRight, stopMarginShort);
                 traps_.push_back(trapRS2);
                 // --- ▲▲▲ トラップ生成完了 ▲▲▲ ---
 
-                // 4. マップチップから 3, 4 の情報を取得して FallingBlock を生成
+                // 4. マップチップから 3, 4 の情報を取得して FallingBlock を生成 (変更なし)
                 const std::vector<DynamicBlockData>& dynamicBlocks = mapChip->GetDynamicBlocks();
                 for (const DynamicBlockData& data : dynamicBlocks) {
                     FallingBlock* newBlock = new FallingBlock();
@@ -383,7 +406,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                     fallingBlocks_.push_back(newBlock);
                 }
 
-                // 5. マップチップから 5 (ゴール) の情報を取得してモデルを生成
+                // 5. マップチップから 5 (ゴール) の情報を取得してモデルを生成 (変更なし)
                 if (mapChip->HasGoal()) {
                     goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
                     goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
@@ -395,69 +418,55 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                 isGameInitialized = true; // 初期化完了
             }
 
-            // --- 更新 (GamePlay) ---
+            // --- 更新 (GamePlay) (変更なし) ---
             if (!isLoadingNextMap) {
                 if (player->IsAlive()) {
                     player->Update();
                 } else {
-                    // ★ 死亡したら GameOver シーンへ
                     currentScene = GameScene::GameOver;
                 }
 
-                // すべてのトラップを更新
+                // (トラップ更新 ... 省略なし)
                 for (Trap* trap : traps_) {
                     trap->Update(player);
                 }
-                // すべての落ちるブロックを更新
+                // (ブロック更新 ... 省略なし)
                 for (FallingBlock* block : fallingBlocks_) {
                     block->Update(player, mapChip);
                 }
 
-                // プレイヤーがマップ外に出たかチェック
                 if (player->IsExiting()) {
-                    isLoadingNextMap = true; // 遷移フラグを立てる
+                    isLoadingNextMap = true;
                 }
 
-                // プレイヤーがゴールしたかチェック
                 if (player->IsAlive() && mapChip->HasGoal() && mapChip->CheckGoalCollision(player->GetPosition(), player->GetHalfSize())) {
-                    // ★ クリアしたら GameClear シーンへ
                     currentScene = GameScene::GameClear;
                 }
             }
-            
+
             player->ImGui_Draw();
 
             // --- マップ遷移処理 (省略なし) ---
             if (isLoadingNextMap) {
-
-                // 1. 古いトラップをすべて削除
-                for (Trap* trap : traps_) {
-                    delete trap;
-                }
+                // (古いリソース削除 ... 省略なし)
+                for (Trap* trap : traps_) { delete trap; }
                 traps_.clear();
-
-                // 1b. 古い落ちるブロックをすべて削除
-                for (FallingBlock* block : fallingBlocks_) {
-                    delete block;
-                }
+                for (FallingBlock* block : fallingBlocks_) { delete block; }
                 fallingBlocks_.clear();
-
-                // 1c. 古いゴールを削除
                 delete goalModel_;
                 goalModel_ = nullptr;
 
-
-                // 2. 新しいマップをロード
+                // ★★★ 変更 (E) ： パスを相対パスに戻す ★★★
                 mapChip->Load("Resources/map2.csv", device);
 
-                // 3. map2.csv 用の新しい開始位置を決定 (左下)
+                // (map2 用の開始位置設定 ... 省略なし)
                 size_t map2Height = 15;
                 float spawnY = (static_cast<float>(map2Height - 1) - 14.0f) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
                 float spawnX = (static_cast<float>(0)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
                 Vector3 map2StartPosition = { spawnX, spawnY, 0.0f };
                 player->SetPosition(map2StartPosition);
 
-                // 4. map2.csv 用の新しい動的オブジェクト (3, 4) を生成
+                // (map2 用の動的オブジェクト生成 ... 省略なし)
                 const std::vector<DynamicBlockData>& dynamicBlocks2 = mapChip->GetDynamicBlocks();
                 for (const DynamicBlockData& data : dynamicBlocks2) {
                     FallingBlock* newBlock = new FallingBlock();
@@ -465,7 +474,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                     fallingBlocks_.push_back(newBlock);
                 }
 
-                // 5. map2.csv 用のゴール (5) を生成
+                // (map2 用のゴール生成 ... 省略なし)
                 if (mapChip->HasGoal()) {
                     goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
                     goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
@@ -473,7 +482,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                     goalModel_->transform.translate = mapChip->GetGoalPosition();
                 }
 
-                // 6. 遷移完了
                 isLoadingNextMap = false;
             }
 
@@ -483,44 +491,44 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 
         // ========================================================
-case GameScene::GameOver: // ← ★ これがゲームオーバー画面です
-{
-    // --- 更新 & 描画 (GameOver) ---
-    ImGui::Begin("GAME OVER");
-    ImGui::Text("You Died!");
+        case GameScene::GameOver:
+        {
+            // --- 更新 & 描画 (GameOver) (変更なし) ---
+            ImGui::Begin("GAME OVER");
+            ImGui::Text("You Died!");
 
-    if (ImGui::Button("Retry Game")) { // リトライ処理
-        cleanupGameResources();
-        currentScene = GameScene::GamePlay;
-    }
-    if (ImGui::Button("Back to Title")) { // タイトルへ戻る処理
-        cleanupGameResources();
-        currentScene = GameScene::Title;
-    }
-    ImGui::End();
+            if (ImGui::Button("Retry Game")) {
+                cleanupGameResources();
+                currentScene = GameScene::GamePlay;
+            }
+            if (ImGui::Button("Back to Title")) {
+                cleanupGameResources();
+                currentScene = GameScene::Title;
+            }
+            ImGui::End();
 
-    break;
-}
-// ========================================================
-
-
-// ========================================================
-case GameScene::GameClear: // ← ★ これがゲームクリア画面です
-{
-    // --- 更新 & 描画 (GameClear) ---
-    ImGui::Begin("GAME CLEAR");
-    ImGui::Text("Congratulations!");
-
-    if (ImGui::Button("Back to Title")) { // タイトルへ戻る処理
-        cleanupGameResources();
-        currentScene = GameScene::Title;
-    }
-    ImGui::End();
-
-    break;
-}
+            break;
+        }
         // ========================================================
-        
+
+
+        // ========================================================
+        case GameScene::GameClear:
+        {
+            // --- 更新 & 描画 (GameClear) (変更なし) ---
+            ImGui::Begin("GAME CLEAR");
+            ImGui::Text("Congratulations!");
+
+            if (ImGui::Button("Back to Title")) {
+                cleanupGameResources();
+                currentScene = GameScene::Title;
+            }
+            ImGui::End();
+
+            break;
+        }
+        // ========================================================
+
         } // --- switch (currentScene) 終わり ---
 
 
@@ -530,9 +538,23 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
         cameraForGpuData->worldPosition = camera->GetTransform().translate;
         directionalLightData->direction = Normalize(directionalLightData->direction);
 
-        
+
         // --- ▼▼▼ 描画処理 (共通処理) ▼▼▼ ---
-        dxCommon->PreDraw();
+        dxCommon->PreDraw(); // ここで画面がクリアされます
+
+        // ★★★ 変更 (F)： シーンに応じてクリアカラーを変更 ★★★
+        if (currentScene == GameScene::Title ||
+            currentScene == GameScene::GameOver ||
+            currentScene == GameScene::GameClear) {
+
+            // 青色に設定
+            //dxCommon->SetClearColor({ 0.0f, 0.0f, 1.0f, 1.0f });
+        } else {
+            // GamePlay シーンでは元の色（黒に近い色）に戻す
+            //dxCommon->SetClearColor({ 0.1f, 0.25f, 0.5f, 1.0f });
+        }
+        // (dxCommon->PreDraw(); の前にSetClearColorを呼ぶことで、次の描画フレームに反映されます)
+
 
         commandList->SetGraphicsRootSignature(graphicsPipeline->GetRootSignature());
         ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get() };
@@ -542,58 +564,88 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
         commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress());
         commandList->SetPipelineState(graphicsPipeline->GetPipelineState(kBlendModeNone));
 
-        // --- ★ 描画処理 (シーン分岐) ★ ---
-        // (GamePlay, GameOver, GameClear シーンではゲームオブジェクトを描画する)
-        if (currentScene == GameScene::GamePlay || currentScene == GameScene::GameOver || currentScene == GameScene::GameClear) 
-        {
-            // ゲームが初期化されていないと (isGameInitialized == false) 各ポインタは nullptr
+
+        // ★ ゲームプレイオブジェクトを描画するラムダ関数 (変更なし)
+        auto drawGamePlayObjects = [&]() {
             if (isGameInitialized) {
                 // マップの描画
                 mapChip->Draw(
-                    commandList,
-                    viewProjectionMatrix,
+                    commandList, viewProjectionMatrix,
                     directionalLightResource->GetGPUVirtualAddress(),
-                    blockTextureSrvHandleGPU); 
+                    blockTextureSrvHandleGPU);
 
                 // プレイヤーの描画
                 player->Draw(
-                    commandList,
-                    viewProjectionMatrix,
+                    commandList, viewProjectionMatrix,
                     directionalLightResource->GetGPUVirtualAddress(),
                     playerTextureSrvHandleGPU);
 
                 // すべてのトラップ(横)を描画
                 for (Trap* trap : traps_) {
                     trap->Draw(
-                        commandList,
-                        viewProjectionMatrix,
+                        commandList, viewProjectionMatrix,
                         directionalLightResource->GetGPUVirtualAddress(),
-                        cubeTextureSrvHandleGPU); 
+                        cubeTextureSrvHandleGPU);
                 }
 
                 // すべての落ちるブロック(3, 4)を描画
                 for (FallingBlock* block : fallingBlocks_) {
                     block->Draw(
-                        commandList,
-                        viewProjectionMatrix,
+                        commandList, viewProjectionMatrix,
                         directionalLightResource->GetGPUVirtualAddress(),
-                        blockTextureSrvHandleGPU); 
+                        blockTextureSrvHandleGPU);
                 }
 
                 // ゴール(5)を描画
                 if (goalModel_) {
                     goalModel_->Draw(
-                        commandList,
-                        viewProjectionMatrix,
+                        commandList, viewProjectionMatrix,
                         directionalLightResource->GetGPUVirtualAddress(),
                         cubeTextureSrvHandleGPU);
                 }
             }
+            };
+
+
+        // --- ★ 描画処理 (シーン分岐) ★ ---
+        switch (currentScene) {
+
+        case GameScene::Title:
+            // ★★★ 変更 (G)： Titleモデルの描画を削除 ★★★
+            // if (titleModel) { 
+            //     titleModel->Draw(...);
+            // }
+            // → 背景は上で青色にクリアされる
+            break;
+
+        case GameScene::GamePlay:
+            // ゲームプレイ中のオブジェクトを描画 (変更なし)
+            drawGamePlayObjects();
+            break;
+
+        case GameScene::GameOver:
+            // ★★★ 変更 (H)： GameOverモデルの描画を削除 ★★★
+            // ★ 背景(ゲーム)の描画も削除し、青色でクリア
+            // drawGamePlayObjects(); 
+            // if (gameOverModel) {
+            //     gameOverModel->Draw(...);
+            // }
+            // → 背景は上で青色にクリアされる
+            break;
+
+        case GameScene::GameClear:
+            // ★★★ 変更 (I)： GameClearモデルの描画を削除 ★★★
+            // ★ 背景(ゲーム)の描画も削除し、青色でクリア
+            // drawGamePlayObjects(); 
+            // if (clearModel) {
+            //     clearModel->Draw(...);
+            // }
+            // → 背景は上で青色にクリアされる
+            break;
         }
-        // (Title シーンは ImGui 以外に描画するものがない)
 
 
-        // ImGui の描画 (全シーン共通)
+        // ImGui の描画 (全シーン共通) (変更なし)
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
         dxCommon->PostDraw();
         // --- ▲▲▲ 描画処理 ▲▲▲ ---
@@ -604,19 +656,19 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
 
-    // --- ▼▼▼ ★ 変更： 終了処理 ▼▼▼ ---
-    
-    // もしゲームプレイ中に終了したらリソースを解放する
+    // --- ▼▼▼ 終了処理 ▼▼▼ ---
+
     if (isGameInitialized) {
-        cleanupGameResources(); // ★ 作成した解放関数を呼ぶ
+        cleanupGameResources();
     }
-    
-    // (元からあった解放処理)
+
     delete graphicsPipeline;
     delete camera;
-    
-    // (mapChip, player, playerModel, traps_, fallingBlocks_, goalModel_ は
-    //  cleanupGameResources で解放済み or そもそも new されていない)
+
+    // ★★★ 変更 (J)： モデルを delete する処理も削除 ★★★
+    // delete titleModel;
+    // delete clearModel;
+    // delete gameOverModel;
 
     dxCommon->Finalize();
     CoUninitialize();
