@@ -498,17 +498,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
             }
 
             // --- 描画 (GameOver) ---
-            ImGui::Begin("GAME OVER");
-            ImVec2 windowSize(300, 120); // タイトルと合わせる
-            ImGui::SetWindowSize(windowSize);
-            ImGui::SetWindowPos(ImVec2(
-                (WinApp::kClientWidth - windowSize.x) * 0.5f,
-                (WinApp::kClientHeight - windowSize.y) * 0.5f
-            ));
-            ImGui::Text("You Died!");
-            ImGui::Separator();
-            ImGui::Text("Press ENTER to return to Title");
-            ImGui::End();
+            //ImGui::Begin("GAME OVER");
+            //ImVec2 windowSize(300, 120); // タイトルと合わせる
+            //ImGui::SetWindowSize(windowSize);
+            //ImGui::SetWindowPos(ImVec2(
+            //    (WinApp::kClientWidth - windowSize.x) * 0.5f,
+            //    (WinApp::kClientHeight - windowSize.y) * 0.5f
+            //));
+            //ImGui::Text("You Died!");
+            //ImGui::Separator();
+            //ImGui::Text("Press ENTER to return to Title");
+            //ImGui::End();
 
             break;
         }
@@ -525,18 +525,18 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                 currentScene = GameScene::Title; // タイトルに戻る
             }
 
-            // --- 描画 (GameClear) ---
-            ImGui::Begin("GAME CLEAR");
-            ImVec2 windowSize(300, 120); // タイトルと合わせる
-            ImGui::SetWindowSize(windowSize);
-            ImGui::SetWindowPos(ImVec2(
-                (WinApp::kClientWidth - windowSize.x) * 0.5f,
-                (WinApp::kClientHeight - windowSize.y) * 0.5f
-            ));
-            ImGui::Text("Congratulations!");
-            ImGui::Separator();
-            ImGui::Text("Press ENTER to return to Title");
-            ImGui::End();
+            //// --- 描画 (GameClear) ---
+            //ImGui::Begin("GAME CLEAR");
+            //ImVec2 windowSize(300, 120); // タイトルと合わせる
+            //ImGui::SetWindowSize(windowSize);
+            //ImGui::SetWindowPos(ImVec2(
+            //    (WinApp::kClientWidth - windowSize.x) * 0.5f,
+            //    (WinApp::kClientHeight - windowSize.y) * 0.5f
+            //));
+            //ImGui::Text("Congratulations!");
+            //ImGui::Separator();
+            //ImGui::Text("Press ENTER to return to Title");
+            //ImGui::End();
 
             break;
         }
@@ -545,7 +545,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         } // --- switch (currentScene) 終わり ---
 
 
-        ImGui::Render();
+        /*ImGui::Render();*/
 
         const Matrix4x4& viewProjectionMatrix = camera->GetViewProjectionMatrix();
         cameraForGpuData->worldPosition = camera->GetTransform().translate;
@@ -616,15 +616,15 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 
         // ImGui の描画 (全シーン共通)
-        ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
+        /*ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);*/
         dxCommon->PostDraw();
         // --- ▲▲▲ 描画処理 ▲▲▲ ---
 
     } // --- メインループ (while) 終わり ---
 
-    ImGui_ImplDX12_Shutdown();
-    ImGui_ImplWin32_Shutdown();
-    ImGui::DestroyContext();
+    //ImGui_ImplDX12_Shutdown();
+    //ImGui_ImplWin32_Shutdown();
+    //ImGui::DestroyContext();
 
     // --- ▼▼▼ ★ 変更： 終了処理 ▼▼▼ ---
 
