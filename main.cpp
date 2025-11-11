@@ -1,4 +1,9 @@
-﻿#define _USE_MATH_DEFINES
+﻿// ========================================================================
+//
+// main.cpp (省略なし完全版)
+//
+// ========================================================================
+#define _USE_MATH_DEFINES
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -132,7 +137,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     // --- ▼▼▼ リソースの宣言 (★ 変更： new は後回し) ▼▼▼ ---
     MapChip* mapChip = nullptr;
-    Model* playerModel = nullptr; 
+    Model* playerModel = nullptr;
     Player* player = nullptr;
 
     std::vector<Trap*> traps_;
@@ -172,7 +177,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     Microsoft::WRL::ComPtr<ID3D12Resource> cubeTextureResource = CreateTextureResource(device, cubeMetadata);
     Microsoft::WRL::ComPtr<ID3D12Resource> cubeIntermediateResource = UploadTextureData(cubeTextureResource.Get(), cubeMipImages, device, commandList);
 
-    
+
     const uint32_t descriptorSizeSRV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // プレイヤーテクスチャ用のSRVを作成（ヒープの2番目） (変更なし)
@@ -206,11 +211,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     device->CreateShaderResourceView(cubeTextureResource.Get(), &cubeSrvDesc, cubeTextureSrvHandleCPU);
 
     // (★ mapChip->Load は GamePlay 初期化へ移動)
-    
+
     // (★ トラップ生成は GamePlay 初期化へ移動)
 
     // (★ FallingBlock 生成は GamePlay 初期化へ移動)
-    
+
     // (★ Goal 生成は GamePlay 初期化へ移動)
 
 
@@ -224,7 +229,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
     // Camera クラスを作成・初期化 (変更なし)
     Camera* camera = new Camera();
-    camera->Initialize(); 
+    camera->Initialize();
 
     // カメラのワールド座標をGPUに送るためのリソース (変更なし)
     Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGpuResource = CreateBufferResource(device, sizeof(CameraForGpu));
@@ -271,7 +276,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         goalModel_ = nullptr;
 
         isGameInitialized = false; // 未初期化状態に戻す
-    };
+        };
 
 
     // メインループ
@@ -288,7 +293,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         // --- ▼▼▼ ★ 変更： シーンベースの更新処理 ▼▼▼ ---
         switch (currentScene) {
 
-        // ========================================================
+            // ========================================================
         case GameScene::Title:
         {
             // --- 更新 (Title) ---
@@ -299,11 +304,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
             // --- 描画 (Title) ---
             ImGui::Begin("TITLE SCREEN");
             ImVec2 windowSize(300, 120); // 少し縦幅を広げる
-            ImGui::SetWindowSize(windowSize); 
+            ImGui::SetWindowSize(windowSize);
             ImGui::SetWindowPos(ImVec2(
                 (WinApp::kClientWidth - windowSize.x) * 0.5f,
                 (WinApp::kClientHeight - windowSize.y) * 0.5f
-            )); 
+            ));
             ImGui::Text("My Awesome Game"); // (ゲームタイトルは適宜変更してください)
             ImGui::Separator();
             ImGui::Text("Press ENTER to Start");
@@ -319,9 +324,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         {
             // --- ★ ゲームプレイリソースの初期化 (初回のみ) ★ ---
             if (!isGameInitialized) {
-                
+
                 // (元々 WinMain の冒頭にあった初期化処理をここに移動)
-                
+
                 mapChip = new MapChip();
                 playerModel = Model::Create("Resources/player", "player.obj", device);
                 player = new Player();
@@ -424,7 +429,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
                     currentScene = GameScene::GameClear;
                 }
             }
-            
+
             player->ImGui_Draw();
 
             // --- マップ遷移処理 (省略なし) ---
@@ -483,44 +488,60 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
 
         // ========================================================
-case GameScene::GameOver: // ← ★ これがゲームオーバー画面です
-{
-    // --- 更新 & 描画 (GameOver) ---
-    ImGui::Begin("GAME OVER");
-    ImGui::Text("You Died!");
+        // ★★★ ここから変更 ★★★
+        case GameScene::GameOver:
+        {
+            // --- 更新 (GameOver) ---
+            if (input->IsKeyPressed(VK_RETURN)) { // Enterキーが押されたら
+                cleanupGameResources();
+                currentScene = GameScene::Title; // タイトルに戻る
+            }
 
-    if (ImGui::Button("Retry Game")) { // リトライ処理
-        cleanupGameResources();
-        currentScene = GameScene::GamePlay;
-    }
-    if (ImGui::Button("Back to Title")) { // タイトルへ戻る処理
-        cleanupGameResources();
-        currentScene = GameScene::Title;
-    }
-    ImGui::End();
+            // --- 描画 (GameOver) ---
+            ImGui::Begin("GAME OVER");
+            ImVec2 windowSize(300, 120); // タイトルと合わせる
+            ImGui::SetWindowSize(windowSize);
+            ImGui::SetWindowPos(ImVec2(
+                (WinApp::kClientWidth - windowSize.x) * 0.5f,
+                (WinApp::kClientHeight - windowSize.y) * 0.5f
+            ));
+            ImGui::Text("You Died!");
+            ImGui::Separator();
+            ImGui::Text("Press ENTER to return to Title");
+            ImGui::End();
 
-    break;
-}
-// ========================================================
-
-
-// ========================================================
-case GameScene::GameClear: // ← ★ これがゲームクリア画面です
-{
-    // --- 更新 & 描画 (GameClear) ---
-    ImGui::Begin("GAME CLEAR");
-    ImGui::Text("Congratulations!");
-
-    if (ImGui::Button("Back to Title")) { // タイトルへ戻る処理
-        cleanupGameResources();
-        currentScene = GameScene::Title;
-    }
-    ImGui::End();
-
-    break;
-}
+            break;
+        }
         // ========================================================
-        
+
+
+        // ========================================================
+        // ★★★ ここから変更 ★★★
+        case GameScene::GameClear:
+        {
+            // --- 更新 (GameClear) ---
+            if (input->IsKeyPressed(VK_RETURN)) { // Enterキーが押されたら
+                cleanupGameResources();
+                currentScene = GameScene::Title; // タイトルに戻る
+            }
+
+            // --- 描画 (GameClear) ---
+            ImGui::Begin("GAME CLEAR");
+            ImVec2 windowSize(300, 120); // タイトルと合わせる
+            ImGui::SetWindowSize(windowSize);
+            ImGui::SetWindowPos(ImVec2(
+                (WinApp::kClientWidth - windowSize.x) * 0.5f,
+                (WinApp::kClientHeight - windowSize.y) * 0.5f
+            ));
+            ImGui::Text("Congratulations!");
+            ImGui::Separator();
+            ImGui::Text("Press ENTER to return to Title");
+            ImGui::End();
+
+            break;
+        }
+        // ========================================================
+
         } // --- switch (currentScene) 終わり ---
 
 
@@ -530,7 +551,7 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
         cameraForGpuData->worldPosition = camera->GetTransform().translate;
         directionalLightData->direction = Normalize(directionalLightData->direction);
 
-        
+
         // --- ▼▼▼ 描画処理 (共通処理) ▼▼▼ ---
         dxCommon->PreDraw();
 
@@ -543,8 +564,9 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
         commandList->SetPipelineState(graphicsPipeline->GetPipelineState(kBlendModeNone));
 
         // --- ★ 描画処理 (シーン分岐) ★ ---
-        // (GamePlay, GameOver, GameClear シーンではゲームオブジェクトを描画する)
-        if (currentScene == GameScene::GamePlay || currentScene == GameScene::GameOver || currentScene == GameScene::GameClear) 
+        // (GamePlay シーンでのみゲームオブジェクトを描画する)
+        // ★★★ ここの if 文を変更 ★★★
+        if (currentScene == GameScene::GamePlay)
         {
             // ゲームが初期化されていないと (isGameInitialized == false) 各ポインタは nullptr
             if (isGameInitialized) {
@@ -553,7 +575,7 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
                     commandList,
                     viewProjectionMatrix,
                     directionalLightResource->GetGPUVirtualAddress(),
-                    blockTextureSrvHandleGPU); 
+                    blockTextureSrvHandleGPU);
 
                 // プレイヤーの描画
                 player->Draw(
@@ -568,7 +590,7 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
                         commandList,
                         viewProjectionMatrix,
                         directionalLightResource->GetGPUVirtualAddress(),
-                        cubeTextureSrvHandleGPU); 
+                        cubeTextureSrvHandleGPU);
                 }
 
                 // すべての落ちるブロック(3, 4)を描画
@@ -577,7 +599,7 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
                         commandList,
                         viewProjectionMatrix,
                         directionalLightResource->GetGPUVirtualAddress(),
-                        blockTextureSrvHandleGPU); 
+                        blockTextureSrvHandleGPU);
                 }
 
                 // ゴール(5)を描画
@@ -590,7 +612,7 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
                 }
             }
         }
-        // (Title シーンは ImGui 以外に描画するものがない)
+        // (Title, GameOver, GameClear シーンは ImGui 以外に描画するものがない)
 
 
         // ImGui の描画 (全シーン共通)
@@ -605,16 +627,16 @@ case GameScene::GameClear: // ← ★ これがゲームクリア画面です
     ImGui::DestroyContext();
 
     // --- ▼▼▼ ★ 変更： 終了処理 ▼▼▼ ---
-    
+
     // もしゲームプレイ中に終了したらリソースを解放する
     if (isGameInitialized) {
         cleanupGameResources(); // ★ 作成した解放関数を呼ぶ
     }
-    
+
     // (元からあった解放処理)
     delete graphicsPipeline;
     delete camera;
-    
+
     // (mapChip, player, playerModel, traps_, fallingBlocks_, goalModel_ は
     //  cleanupGameResources で解放済み or そもそも new されていない)
 

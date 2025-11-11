@@ -240,3 +240,32 @@ void DirectXCommon::CreateFence() {
     fenceEvent_ = CreateEvent(NULL, FALSE, FALSE, NULL);
     assert(fenceEvent_ != nullptr);
 }
+
+// ★★★ 以下に3つのメソッドの実装を追加 (main.cpp からの要求) ★★★
+
+// ★ コマンドを実行し、シグナルを送信する (PostDraw からロジックを抜粋)
+void DirectXCommon::ExecuteCommand() {
+    // GPUにコマンドリストの実行を行わせる
+    ID3D12CommandList* commandLists[] = { commandList_.Get() };
+    commandQueue_->ExecuteCommandLists(1, commandLists);
+
+    // Fenceの値を更新
+    fenceValue_++;
+    commandQueue_->Signal(fence_.Get(), fenceValue_);
+}
+
+// ★ GPUの処理完了を待つ (PostDraw や Finalize と同じロジック)
+void DirectXCommon::WaitForGPU() {
+    if (fence_->GetCompletedValue() < fenceValue_) {
+        fence_->SetEventOnCompletion(fenceValue_, fenceEvent_);
+        WaitForSingleObject(fenceEvent_, INFINITE);
+    }
+}
+
+// ★ コマンドアロケータとコマンドリストをリセットする (PostDraw からロジックを抜粋)
+void DirectXCommon::ResetCommandList() {
+    HRESULT hr = commandAllocator_->Reset();
+    assert(SUCCEEDED(hr));
+    hr = commandList_->Reset(commandAllocator_.Get(), nullptr);
+    assert(SUCCEEDED(hr));
+}
