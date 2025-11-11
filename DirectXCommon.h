@@ -33,6 +33,10 @@ public:
     D3D12_RENDER_TARGET_VIEW_DESC GetRtvDesc() const { return rtvDesc_; }
     UINT GetBackBufferCount() const { return kBackBufferCount_; }
 
+    // ★★★ main.cpp (テクスチャロード用) に追加 ★★★
+    void ExecuteCommand();
+    void WaitForGPU();
+    void ResetCommandList();
 
 private:
     DirectXCommon() = default;
