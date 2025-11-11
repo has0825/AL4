@@ -41,6 +41,9 @@
 #include "Player.h"
 #include "MapChip.h"
 #include "Camera.h" // Camera.h をインクルード
+#include "Trap.h" // Trap.h をインクルード
+#include "FallingBlock.h" // 新規作成した FallingBlock.h
+
 
 // ヘルパー関数 (省略なし)
 static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception)
@@ -124,6 +127,16 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     Player* player = new Player();
     player->Initialize(playerModel, mapChip);
 
+    // トラップを複数管理するベクター
+    std::vector<Trap*> traps_;
+
+    // 落ちるブロック(3, 4)を複数管理するベクター
+    std::vector<FallingBlock*> fallingBlocks_;
+
+    // ゴール(5)のモデル
+    Model* goalModel_ = nullptr;
+
+
     Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
     // プレイヤーのテクスチャをロード
@@ -136,15 +149,25 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     // "block.png" を読み込む
     std::string blockTexturePath = "Resources/block/block.png";
     DirectX::ScratchImage blockMipImages = LoadTexture(blockTexturePath);
-
     if (blockMipImages.GetImageCount() == 0) {
         OutputDebugStringA("ERROR: Failed to load block.png!\n");
         assert(false && "Failed to load block.png");
     }
-
     const DirectX::TexMetadata& blockMetadata = blockMipImages.GetMetadata();
     Microsoft::WRL::ComPtr<ID3D12Resource> blockTextureResource = CreateTextureResource(device, blockMetadata);
     Microsoft::WRL::ComPtr<ID3D12Resource> blockIntermediateResource = UploadTextureData(blockTextureResource.Get(), blockMipImages, device, commandList);
+
+    // "cube.jpg" を読み込む
+    std::string cubeTexturePath = "Resources/cube/cube.jpg";
+    DirectX::ScratchImage cubeMipImages = LoadTexture(cubeTexturePath);
+    if (cubeMipImages.GetImageCount() == 0) {
+        OutputDebugStringA("ERROR: Failed to load cube.jpg!\n");
+        assert(false && "Failed to load cube.jpg");
+    }
+    const DirectX::TexMetadata& cubeMetadata = cubeMipImages.GetMetadata();
+    Microsoft::WRL::ComPtr<ID3D12Resource> cubeTextureResource = CreateTextureResource(device, cubeMetadata);
+    Microsoft::WRL::ComPtr<ID3D12Resource> cubeIntermediateResource = UploadTextureData(cubeTextureResource.Get(), cubeMipImages, device, commandList);
+
 
     const uint32_t descriptorSizeSRV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
@@ -168,8 +191,84 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     D3D12_GPU_DESCRIPTOR_HANDLE blockTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 3);
     device->CreateShaderResourceView(blockTextureResource.Get(), &blockSrvDesc, blockTextureSrvHandleCPU);
 
+    // cube.jpg の SRV を作成 (ヒープの4番目)
+    D3D12_SHADER_RESOURCE_VIEW_DESC cubeSrvDesc{};
+    cubeSrvDesc.Format = cubeMetadata.format;
+    cubeSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    cubeSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    cubeSrvDesc.Texture2D.MipLevels = UINT(cubeMetadata.mipLevels);
+    D3D12_CPU_DESCRIPTOR_HANDLE cubeTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 4);
+    D3D12_GPU_DESCRIPTOR_HANDLE cubeTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 4);
+    device->CreateShaderResourceView(cubeTextureResource.Get(), &cubeSrvDesc, cubeTextureSrvHandleCPU);
+
+
     // Load() を device 付きでここで呼び出す
     mapChip->Load("Resources/map.csv", device);
+
+    // --- ▼▼▼ map.csv 用のトラップを手動で生成 ▼▼▼ ---
+
+    // CSVのY座標をワールドのY座標に変換するラムダ式
+    size_t mapHeight = 15; // CSVの総行数
+    auto csvYToWorldY = [&](int csvY) {
+        return (static_cast<float>(mapHeight - 1) - static_cast<float>(csvY)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
+        };
+
+    // 1. 左から来るトラップ (CSV y=4, 5, 6)
+    float stopMarginNormal = MapChip::kBlockSize * 1.0f;
+
+    Trap* trapL1 = new Trap();
+    trapL1->Initialize(device, csvYToWorldY(4), Trap::AttackSide::FromLeft, stopMarginNormal);
+    traps_.push_back(trapL1);
+
+    Trap* trapL2 = new Trap();
+    trapL2->Initialize(device, csvYToWorldY(5), Trap::AttackSide::FromLeft, stopMarginNormal);
+    traps_.push_back(trapL2);
+
+    Trap* trapL3 = new Trap();
+    trapL3->Initialize(device, csvYToWorldY(6), Trap::AttackSide::FromLeft, stopMarginNormal);
+    traps_.push_back(trapL3);
+
+    // 2. 右から来るトラップ (通常) (CSV y=8, 9, 10)
+    Trap* trapR1 = new Trap();
+    trapR1->Initialize(device, csvYToWorldY(8), Trap::AttackSide::FromRight, stopMarginNormal);
+    traps_.push_back(trapR1);
+
+    Trap* trapR2 = new Trap();
+    trapR2->Initialize(device, csvYToWorldY(9), Trap::AttackSide::FromRight, stopMarginNormal);
+    traps_.push_back(trapR2);
+
+    Trap* trapR3 = new Trap();
+    trapR3->Initialize(device, csvYToWorldY(10), Trap::AttackSide::FromRight, stopMarginNormal);
+    traps_.push_back(trapR3);
+
+    // 3. 右から来るトラップ (Short) (CSV y=12, 13)
+    float stopMarginShort = MapChip::kBlockSize * 0.2f;
+
+    Trap* trapRS1 = new Trap();
+    trapRS1->Initialize(device, csvYToWorldY(12), Trap::AttackSide::FromRight, stopMarginShort);
+    traps_.push_back(trapRS1);
+
+    Trap* trapRS2 = new Trap();
+    trapRS2->Initialize(device, csvYToWorldY(13), Trap::AttackSide::FromRight, stopMarginShort);
+    traps_.push_back(trapRS2);
+    // --- ▲▲▲ トラップ生成完了 ▲▲▲ ---
+
+    // 4. マップチップから 3, 4 の情報を取得して FallingBlock を生成
+    const std::vector<DynamicBlockData>& dynamicBlocks = mapChip->GetDynamicBlocks();
+    for (const DynamicBlockData& data : dynamicBlocks) {
+        FallingBlock* newBlock = new FallingBlock();
+        newBlock->Initialize(device, data.position, static_cast<BlockType>(data.type));
+        fallingBlocks_.push_back(newBlock);
+    }
+
+    // 5. マップチップから 5 (ゴール) の情報を取得してモデルを生成
+    if (mapChip->HasGoal()) {
+        goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
+        goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
+        goalModel_->transform.rotate = { 0.0f, 0.0f, 0.0f };
+        goalModel_->transform.translate = mapChip->GetGoalPosition();
+    }
+
 
     // ライトの初期化
     Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
@@ -198,11 +297,40 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
         srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
+    bool isLoadingNextMap = false;
+    bool isGameClear = false; // ゲームクリアフラグ
+
+
     // メインループ
     while (!winApp->IsEndRequested()) {
         winApp->ProcessMessage();
         Input::GetInstance()->Update();
-        player->Update();
+
+        // 遷移中、ゲームクリア中は更新しない
+        if (!isLoadingNextMap && !isGameClear) {
+            if (player->IsAlive()) {
+                player->Update();
+            }
+            // すべてのトラップを更新
+            for (Trap* trap : traps_) {
+                trap->Update(player);
+            }
+            // すべての落ちるブロックを更新
+            for (FallingBlock* block : fallingBlocks_) {
+                block->Update(player, mapChip);
+            }
+
+            // プレイヤーがマップ外に出たかチェック
+            if (player->IsExiting()) {
+                isLoadingNextMap = true; // 遷移フラグを立てる
+            }
+
+            // プレイヤーがゴールしたかチェック
+            if (player->IsAlive() && mapChip->CheckGoalCollision(player->GetPosition(), player->GetHalfSize())) {
+                isGameClear = true;
+            }
+        }
+
 
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
@@ -210,19 +338,93 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 
         player->ImGui_Draw();
 
-        // camera->ImGui_Draw() の呼び出しを削除済み
+        // 死亡時のリセット処理 (デバッグ用)
+        if (!player->IsAlive()) {
+            ImGui::Begin("GAME OVER");
+            ImGui::Text("You Died!");
+            if (ImGui::Button("Reset Game")) {
+                player->Reset();
+                // すべてのトラップをリセット
+                for (Trap* trap : traps_) {
+                    trap->Reset();
+                }
+                // すべての落ちるブロックをリセット
+                for (FallingBlock* block : fallingBlocks_) {
+                    // ▼▼▼ ★★★ 修正 ★★★ ▼▼▼
+                    block->Reset(mapChip); // mapChip を渡す
+                    // ▲▲▲ ★★★ 修正 ★★★ ▲▲▲
+                }
+            }
+            ImGui::End();
+        }
+
+        // ゲームクリア時の表示
+        if (isGameClear) {
+            ImGui::Begin("GAME CLEAR");
+            ImGui::Text("Congratulations!");
+            ImGui::End();
+        }
+
 
         ImGui::Render();
 
-        // camera->UpdateMatrix() の呼び出しを削除済み
-
-        // 行列は Camera から取得するだけ
         const Matrix4x4& viewProjectionMatrix = camera->GetViewProjectionMatrix();
-
-        // GPUに送るカメラ座標を更新
         cameraForGpuData->worldPosition = camera->GetTransform().translate;
-
         directionalLightData->direction = Normalize(directionalLightData->direction);
+
+
+        // --- ▼▼▼ マップ遷移処理 ▼▼▼ ---
+        if (isLoadingNextMap) {
+
+            // 1. 古いトラップをすべて削除
+            for (Trap* trap : traps_) {
+                delete trap;
+            }
+            traps_.clear();
+
+            // 1b. 古い落ちるブロックをすべて削除
+            for (FallingBlock* block : fallingBlocks_) {
+                delete block;
+            }
+            fallingBlocks_.clear();
+
+            // 1c. 古いゴールを削除
+            delete goalModel_;
+            goalModel_ = nullptr;
+
+
+            // 2. 新しいマップをロード
+            mapChip->Load("Resources/map2.csv", device);
+
+            // 3. map2.csv 用の新しい開始位置を決定 (左下)
+            size_t map2Height = 15;
+            float spawnY = (static_cast<float>(map2Height - 1) - 14.0f) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
+            float spawnX = (static_cast<float>(0)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
+            Vector3 map2StartPosition = { spawnX, spawnY, 0.0f };
+            player->SetPosition(map2StartPosition);
+
+            // 4. map2.csv 用の新しい動的オブジェクト (3, 4) を生成
+            const std::vector<DynamicBlockData>& dynamicBlocks2 = mapChip->GetDynamicBlocks();
+            for (const DynamicBlockData& data : dynamicBlocks2) {
+                FallingBlock* newBlock = new FallingBlock();
+                newBlock->Initialize(device, data.position, static_cast<BlockType>(data.type));
+                fallingBlocks_.push_back(newBlock);
+            }
+
+            // 5. map2.csv 用のゴール (5) を生成
+            if (mapChip->HasGoal()) {
+                goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
+                goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
+                goalModel_->transform.rotate = { 0.0f, 0.0f, 0.0f };
+                goalModel_->transform.translate = mapChip->GetGoalPosition();
+            }
+
+            // 6. 遷移完了
+            isLoadingNextMap = false;
+        }
+        // --- ▲▲▲ 修正完了 ▲▲▲ ---
+
+
         dxCommon->PreDraw();
 
         commandList->SetGraphicsRootSignature(graphicsPipeline->GetRootSignature());
@@ -230,22 +432,52 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
         commandList->SetDescriptorHeaps(1, descriptorHeaps);
         commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-        commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress()); // カメラ座標CBVはそのまま
+        commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress());
         commandList->SetPipelineState(graphicsPipeline->GetPipelineState(kBlendModeNone));
 
-        // マップの描画 (取得した viewProjectionMatrix を使う)
+        // マップの描画
+        // ★ MapChip::Draw は静的ブロック(1)のみ描画 -> block.png を使う
         mapChip->Draw(
             commandList,
-            viewProjectionMatrix, // ◀ Cameraから取得した行列
+            viewProjectionMatrix,
             directionalLightResource->GetGPUVirtualAddress(),
-            blockTextureSrvHandleGPU);
+            blockTextureSrvHandleGPU); // ★ cube -> block
 
-        // プレイヤーの描画 (取得した viewProjectionMatrix を使う)
+        // プレイヤーの描画
         player->Draw(
             commandList,
-            viewProjectionMatrix, // ◀ Cameraから取得した行列
+            viewProjectionMatrix,
             directionalLightResource->GetGPUVirtualAddress(),
             playerTextureSrvHandleGPU);
+
+        // すべてのトラップ(横)を描画
+        for (Trap* trap : traps_) {
+            trap->Draw(
+                commandList,
+                viewProjectionMatrix,
+                directionalLightResource->GetGPUVirtualAddress(),
+                cubeTextureSrvHandleGPU); // ★ cube.jpg のテクスチャハンドルを渡す
+        }
+
+        // すべての落ちるブロック(3, 4)を描画
+        for (FallingBlock* block : fallingBlocks_) {
+            // ★ FallingBlock (3, 4) は block.obj, block.png を使う
+            block->Draw(
+                commandList,
+                viewProjectionMatrix,
+                directionalLightResource->GetGPUVirtualAddress(),
+                blockTextureSrvHandleGPU); // ★ cube -> block
+        }
+
+        // ゴール(5)を描画
+        if (goalModel_) {
+            goalModel_->Draw(
+                commandList,
+                viewProjectionMatrix,
+                directionalLightResource->GetGPUVirtualAddress(),
+                cubeTextureSrvHandleGPU); // ★ cube.jpg
+        }
+
 
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
         dxCommon->PostDraw();
@@ -259,7 +491,23 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
     delete player;
     delete playerModel;
     delete graphicsPipeline;
-    delete camera; // Camera を delete する
+    delete camera;
+
+    // すべてのトラップを解放
+    for (Trap* trap : traps_) {
+        delete trap;
+    }
+    traps_.clear();
+
+    // すべての落ちるブロックを解放
+    for (FallingBlock* block : fallingBlocks_) {
+        delete block;
+    }
+    fallingBlocks_.clear();
+
+    // ゴールモデルを解放
+    delete goalModel_;
+
     dxCommon->Finalize();
     CoUninitialize();
     winApp->Finalize();

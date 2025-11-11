@@ -11,13 +11,15 @@
 void Player::Initialize(Model* model, MapChip* mapChip) {
     model_ = model;
     mapChip_ = mapChip;
-    transform_.scale = { 0.4f, 0.4f, 0.4f }; // Note: Scale is visual, collision uses kPlayerHalfSize
+    transform_.scale = { 0.4f, 0.4f, 0.4f };
     transform_.rotate = { 0.0f, 0.0f, 0.0f };
-    transform_.translate = { 2.0f, 9.0f, 0.0f };
-    velocity_ = { 0.0f, 0.0f, 0.0f };
-    onGround_ = false;
-    wallTouch_ = WallTouchSide::None;
-    jumpBufferTimer_ = 0.0f;
+
+    // リセット用に初期位置を記憶
+    initialPosition_ = { 2.0f, 9.0f, 0.0f };
+
+    // SetPosition を呼んで初期化
+    SetPosition(initialPosition_);
+    isAlive_ = true;
 }
 
 void Player::Update() {
@@ -30,18 +32,14 @@ void Player::Update() {
     const float kWallSlideSpeed = 0.02f;
     const float kWallJumpPowerX = 0.3f;
     const float kWallJumpPowerY = 0.42f;
-    // 🔽🔽🔽 **kPlayerHalfSize を 0.4f に戻す** 🔽🔽🔽
-    const float kPlayerHalfSize = 0.2f; // 0.20f から 0.4f に戻す
-    // 🔼🔼🔼 ************************************ 🔼🔼🔼
+    const float kPlayerHalfSize = 0.2f;
 
     // ▼▼▼ ステップ1: 入力を処理して、このフレームのX方向の基本速度を決定する ▼▼▼
     float moveX = 0.0f;
     if (input->IsKeyDown('D')) { moveX = kMoveSpeed; }
     if (input->IsKeyDown('A')) { moveX = -kMoveSpeed; }
 
-    // 基本のX速度を設定 (壁ジャンプで上書きされる可能性あり)
     velocity_.x = moveX;
-
 
     // ▼▼▼ ステップ2: 物理演算と衝突判定 (Y -> X の順) ▼▼▼
 
@@ -56,13 +54,13 @@ void Player::Update() {
     wallTouch_ = WallTouchSide::None; // フレーム開始時にリセット
 
     // Y方向の移動と衝突判定
-    Vector3 position = transform_.translate; // 現在位置を取得
-    position.y += velocity_.y; // Y方向に移動
+    Vector3 position = transform_.translate;
+    position.y += velocity_.y;
 
     float playerTop = position.y + kPlayerHalfSize;
     float playerBottom = position.y - kPlayerHalfSize;
-    float playerLeft = transform_.translate.x - kPlayerHalfSize;  // Y判定では「現在のX」を使う
-    float playerRight = transform_.translate.x + kPlayerHalfSize; // Y判定では「現在のX」を使う
+    float playerLeft = transform_.translate.x - kPlayerHalfSize;
+    float playerRight = transform_.translate.x + kPlayerHalfSize;
 
     if (velocity_.y < 0) { // 落下中の下方向判定
         if (mapChip_->CheckCollision({ playerLeft, playerBottom, 0 }) || mapChip_->CheckCollision({ playerRight, playerBottom, 0 })) {
@@ -76,48 +74,64 @@ void Player::Update() {
             velocity_.y = 0;
         }
     }
-    // Y座標が確定 (position.y)
 
     // X方向の移動と衝突判定
-    position.x += velocity_.x; // Yが確定した position に X の移動を加える
+    position.x += velocity_.x;
 
-    playerLeft = position.x - kPlayerHalfSize;   // X判定では「予測X」を使う
-    playerRight = position.x + kPlayerHalfSize;  // X判定では「予測X」を使う
-    playerTop = position.y + kPlayerHalfSize;    // X判定では「確定Y」を使う
-    playerBottom = position.y - kPlayerHalfSize; // X判定では「確定Y」を使う
-
-    // ▼▼▼ ★★★ ここが今回の修正点 ★★★ ▼▼▼
-    // Y座標のチェック位置を、プレイヤーの状態(地上/空中)によって切り替える
+    playerLeft = position.x - kPlayerHalfSize;
+    playerRight = position.x + kPlayerHalfSize;
+    playerTop = position.y + kPlayerHalfSize;
+    playerBottom = position.y - kPlayerHalfSize;
 
     // (A) 空中にいる時用のY座標 (壁抜け対策: ブロックの中を見る)
     float checkY_Bottom_ForWall = playerBottom - 0.001f;
     // (B) 地上にいる時用のY座標 (地面誤認対策: ブロックの上を見る)
     float checkY_Bottom_ForMove = playerBottom + 0.001f;
 
-    // プレイヤーの上端 (これは共通)
     float checkY_Top = playerTop - 0.001f;
 
     if (velocity_.x < 0) { // 左移動
-        // onGround_ の状態に応じて (A) か (B) を選択
         float checkY_Bottom = onGround_ ? checkY_Bottom_ForMove : checkY_Bottom_ForWall;
 
         if (mapChip_->CheckCollision({ playerLeft, checkY_Top, 0 }) || mapChip_->CheckCollision({ playerLeft, checkY_Bottom, 0 })) {
             position.x = floor(playerLeft / MapChip::kBlockSize) * MapChip::kBlockSize + MapChip::kBlockSize + kPlayerHalfSize + 0.001f;
             if (!onGround_) wallTouch_ = WallTouchSide::Left;
-            velocity_.x = 0; // 壁に当たったらX速度をリセット
+            velocity_.x = 0;
         }
     } else if (velocity_.x > 0) { // 右移動
-        // onGround_ の状態に応じて (A) か (B) を選択
         float checkY_Bottom = onGround_ ? checkY_Bottom_ForMove : checkY_Bottom_ForWall;
 
-        if (mapChip_->CheckCollision({ playerRight, checkY_Top, 0 }) || mapChip_->CheckCollision({ playerRight, checkY_Bottom, 0 })) {
-            position.x = floor(playerRight / MapChip::kBlockSize) * MapChip::kBlockSize - kPlayerHalfSize - 0.001f;
-            if (!onGround_) wallTouch_ = WallTouchSide::Right;
-            velocity_.x = 0; // 壁に当たったらX速度をリセット
+        // まず当たり判定をチェック
+        bool collision = mapChip_->CheckCollision({ playerRight, checkY_Top, 0 }) || mapChip_->CheckCollision({ playerRight, checkY_Bottom, 0 });
+
+        if (collision) {
+            // 当たった場合
+
+            // マップの右端かどうかの判定準備
+            size_t colCount = 20; // デフォルト
+            if (mapChip_->GetColCount() > 0) colCount = mapChip_->GetColCount();
+            float mapWidth = static_cast<float>(colCount) * MapChip::kBlockSize;
+
+            // 出口となるY座標の定義 (map.csv の15行マップに基づく)
+            float topExitY_Min = 7.7f;      // マップ上部 (CSV Y=1,2,3 あたり) の下限
+            float bottomExitY_Max = 0.7f;   // マップ下部 (CSV Y=14) の上限
+
+            bool isOutOfMap = (playerRight > mapWidth); // 画面外か？
+            bool isAtTopExit = (transform_.translate.y > topExitY_Min);    // 上の出口か？
+            bool isAtBottomExit = (transform_.translate.y < bottomExitY_Max);  // 下の出口か？
+
+            // 「画面外」かつ「出口Y座標」の場合、衝突を *無視* する
+            if (isOutOfMap && (isAtTopExit || isAtBottomExit)) {
+                // 何もしない (そのまま画面外へ進む)
+            } else {
+                // それ以外の「本当の壁」か「画面外だがYが違う」場合
+                position.x = floor(playerRight / MapChip::kBlockSize) * MapChip::kBlockSize - kPlayerHalfSize - 0.001f;
+                if (!onGround_) wallTouch_ = WallTouchSide::Right;
+                velocity_.x = 0;
+            }
         }
     }
 
-    // 最終的な座標を transform_ に反映
     transform_.translate = position;
 
 
@@ -136,43 +150,38 @@ void Player::Update() {
         if (onGround_) { // 地上ジャンプ
             velocity_.y = kJumpPower;
             jumpBufferTimer_ = 0.0f;
-            onGround_ = false; // ジャンプしたら接地解除
-        }
-        // 壁キック (入力 moveX が必要)
-        else if (wallTouch_ == WallTouchSide::Left && moveX >= 0) {
+            onGround_ = false;
+        } else if (wallTouch_ == WallTouchSide::Left && moveX >= 0) {
             velocity_.y = kWallJumpPowerY;
-            velocity_.x = kWallJumpPowerX; // ★ここでX速度が上書きされる
+            velocity_.x = kWallJumpPowerX;
             jumpBufferTimer_ = 0.0f;
-            transform_.rotate.y = -M_PI / 2.0f; // 右向き
-            wallTouch_ = WallTouchSide::None; // 壁接触解除
+            transform_.rotate.y = -(float)M_PI / 2.0f;
+            wallTouch_ = WallTouchSide::None;
         } else if (wallTouch_ == WallTouchSide::Right && moveX <= 0) {
             velocity_.y = kWallJumpPowerY;
-            velocity_.x = -kWallJumpPowerX; // ★ここでX速度が上書きされる
+            velocity_.x = -kWallJumpPowerX;
             jumpBufferTimer_ = 0.0f;
-            transform_.rotate.y = M_PI / 2.0f; // 左向き
-            wallTouch_ = WallTouchSide::None; // 壁接触解除
+            transform_.rotate.y = (float)M_PI / 2.0f;
+            wallTouch_ = WallTouchSide::None;
         }
     }
 
-    // 向きの更新 (動いていたコードのロジック)
-    if (onGround_) { // 地上
-        if (moveX > 0) {
-            transform_.rotate.y = -M_PI / 2.0f;
-        } else if (moveX < 0) {
-            transform_.rotate.y = M_PI / 2.0f;
+    // 向きの更新
+    if (onGround_) {
+        if (moveX > 0.0f) {
+            transform_.rotate.y = -(float)M_PI / 2.0f;
+        } else if (moveX < 0.0f) {
+            transform_.rotate.y = (float)M_PI / 2.0f;
         }
-    }
-    // 空中での向き変更を追加 (壁接触時以外)
-    else if (wallTouch_ == WallTouchSide::None) {
-        // 最終的な速度(velocity_.x)で判断
+    } else if (wallTouch_ == WallTouchSide::None) {
         if (velocity_.x > 0.01f) {
-            transform_.rotate.y = -M_PI / 2.0f; // 右向き
+            transform_.rotate.y = -(float)M_PI / 2.0f;
         } else if (velocity_.x < -0.01f) {
-            transform_.rotate.y = M_PI / 2.0f; // 左向き
+            transform_.rotate.y = (float)M_PI / 2.0f;
         }
     }
 
-    model_->transform = transform_; // モデルに最終的なTransformを反映
+    model_->transform = transform_;
 }
 
 
@@ -181,6 +190,7 @@ void Player::Draw(
     const Matrix4x4& viewProjectionMatrix,
     D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress,
     D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {
+
     model_->Draw(commandList, viewProjectionMatrix, lightGpuAddress, textureSrvHandle);
 }
 
@@ -198,5 +208,69 @@ void Player::ImGui_Draw() {
     if (wallTouch_ == WallTouchSide::Right) wallText = "Right";
     ImGui::Text("WallTouch: %s", wallText);
     ImGui::Text("JumpBuffer: %.3f", jumpBufferTimer_);
+
+    ImGui::Text("isAlive: %s", isAlive_ ? "TRUE" : "FALSE");
+
     ImGui::End();
 }
+
+void Player::Die() {
+    isAlive_ = false;
+    velocity_ = { 0.0f, 0.0f, 0.0f };
+}
+
+void Player::Reset() {
+    SetPosition(initialPosition_);
+    isAlive_ = true;
+}
+
+// --- ▼▼▼ マップ遷移のために追加/修正 ▼▼▼ ---
+
+bool Player::IsExiting() const {
+    if (!mapChip_) { return false; }
+
+    // CSVの列数 (20列と仮定)
+    size_t colCount = 20;
+    if (mapChip_->GetColCount() > 0) {
+        colCount = mapChip_->GetColCount();
+    }
+
+    // マップの右端のワールド座標
+    float mapWidth = static_cast<float>(colCount) * MapChip::kBlockSize;
+
+    // プレイヤーの中心座標
+    const Vector3& pos = transform_.translate;
+
+    // 1. 画面右端より外に出たか？
+    if (pos.x > mapWidth) {
+        // 出口となるY座標の定義 (map.csv の15行マップに基づく)
+        float topExitY_Min = 7.7f;      // マップ上部 (CSV Y=1,2,3 あたり) の下限
+        float bottomExitY_Max = 0.7f;   // マップ下部 (CSV Y=14) の上限
+
+        // 2. 上の出口Y座標にいるか？
+        if (pos.y > topExitY_Min) {
+            return true;
+        }
+        // 3. 下の出口Y座標にいるか？
+        if (pos.y < bottomExitY_Max) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void Player::SetPosition(const Vector3& pos) {
+    transform_.translate = pos;
+    velocity_ = { 0.0f, 0.0f, 0.0f };
+    onGround_ = false; // 空中からスタート
+    wallTouch_ = WallTouchSide::None;
+    jumpBufferTimer_ = 0.0f;
+    model_->transform = transform_; // モデルにも反映
+
+    // ▼▼▼ ★★★ ここが修正点 ★★★ ▼▼▼
+    // 渡された位置を、新しいリスポーン地点として記憶する
+    initialPosition_ = pos;
+    // ▲▲▲ ★★★ 修正完了 ★★★ ▲▲▲
+}
+// --- ▲▲▲ 追加完了 ▲▲▲ ---

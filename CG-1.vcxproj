@@ -25,6 +25,7 @@
     <ClCompile Include="externals\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="externals\imgui\imgui_tables.cpp" />
     <ClCompile Include="externals\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="FallingBlock.cpp" />
     <ClCompile Include="GraphicsPipeline.cpp" />
     <ClCompile Include="Input.cpp" />
     <ClCompile Include="main.cpp">
@@ -69,6 +70,7 @@
     <ClInclude Include="externals\imgui\imstb_rectpack.h" />
     <ClInclude Include="externals\imgui\imstb_textedit.h" />
     <ClInclude Include="externals\imgui\imstb_truetype.h" />
+    <ClInclude Include="FallingBlock.h" />
     <ClInclude Include="GraphicsPipeline.h" />
     <ClInclude Include="Input.h" />
     <ClInclude Include="MapChip.h" />
