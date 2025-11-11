@@ -37,266 +37,589 @@
 #include "Model.h"
 #include "MathUtil.h"
 #include "DataTypes.h"
+#include "Input.h"
+#include "Player.h"
+#include "MapChip.h"
+#include "Camera.h" // Camera.h をインクルード
+#include "Trap.h" // Trap.h をインクルード
+#include "FallingBlock.h" // 新規作成した FallingBlock.h
 
-// === このファイルに残っているヘルパー関数 ===
+
+// ヘルパー関数 (省略なし)
 static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception)
 {
-	SYSTEMTIME time;
-	GetLocalTime(&time);
-	wchar_t filePath[MAX_PATH] = { 0 };
-	CreateDirectory(L"./Dumps", nullptr);
-	StringCchPrintfW(filePath, MAX_PATH, L"./Dumps/%04d-%02d%02d-%02d%02d.dmp",
-		time.wYear, time.wMonth, time.wDay, time.wHour,
-		time.wMinute);
-	HANDLE dumpFileHandle = CreateFile(filePath, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_WRITE | FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
-	DWORD processId = GetCurrentProcessId();
-	DWORD threadId = GetCurrentThreadId();
-	MINIDUMP_EXCEPTION_INFORMATION minidumpInformation{ 0 };
-	minidumpInformation.ThreadId = threadId;
-	minidumpInformation.ExceptionPointers = exception;
-	minidumpInformation.ClientPointers = TRUE;
-	MiniDumpWriteDump(GetCurrentProcess(), processId, dumpFileHandle,
-		MiniDumpNormal, &minidumpInformation, nullptr, nullptr);
-	return EXCEPTION_EXECUTE_HANDLER;
+    SYSTEMTIME time;
+    GetLocalTime(&time);
+    wchar_t filePath[MAX_PATH] = { 0 };
+    CreateDirectory(L"./Dumps", nullptr);
+    StringCchPrintfW(filePath, MAX_PATH, L"./Dumps/%04d-%02d%02d-%02d%02d.dmp",
+        time.wYear, time.wMonth, time.wDay, time.wHour,
+        time.wMinute);
+    HANDLE dumpFileHandle = CreateFile(filePath, GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_WRITE | FILE_SHARE_READ, 0, CREATE_ALWAYS, 0, 0);
+    DWORD processId = GetCurrentProcessId();
+    DWORD threadId = GetCurrentThreadId();
+    MINIDUMP_EXCEPTION_INFORMATION minidumpInformation{ 0 };
+    minidumpInformation.ThreadId = threadId;
+    minidumpInformation.ExceptionPointers = exception;
+    minidumpInformation.ClientPointers = TRUE;
+    MiniDumpWriteDump(GetCurrentProcess(), processId, dumpFileHandle,
+        MiniDumpNormal, &minidumpInformation, nullptr, nullptr);
+    return EXCEPTION_EXECUTE_HANDLER;
 }
 void Log(std::ostream& os, const std::string& message)
 {
-	os << message << std::endl;
-	OutputDebugStringA(message.c_str());
+    os << message << std::endl;
+    OutputDebugStringA(message.c_str());
 }
 std::wstring ConvertString(const std::string& str)
 {
-	if (str.empty()) { return std::wstring(); }
-	auto sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(&str[0]), static_cast<int>(str.size()), NULL, 0);
-	if (sizeNeeded == 0) { return std::wstring(); }
-	std::wstring result(sizeNeeded, 0);
-	MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(&str[0]), static_cast<int>(str.size()), &result[0], sizeNeeded);
-	return result;
+    if (str.empty()) { return std::wstring(); }
+    auto sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(&str[0]), static_cast<int>(str.size()), NULL, 0);
+    if (sizeNeeded == 0) { return std::wstring(); }
+    std::wstring result(sizeNeeded, 0);
+    MultiByteToWideChar(CP_UTF8, 0, reinterpret_cast<const char*>(&str[0]), static_cast<int>(str.size()), &result[0], sizeNeeded);
+    return result;
 }
 std::string ConvertString(const std::wstring& str)
 {
-	if (str.empty()) { return std::string(); }
-	auto sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), NULL, 0, NULL, NULL);
-	if (sizeNeeded == 0) { return std::string(); }
-	std::string result(sizeNeeded, 0);
-	WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), result.data(), sizeNeeded, NULL, NULL);
-	return result;
+    if (str.empty()) { return std::string(); }
+    auto sizeNeeded = WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), NULL, 0, NULL, NULL);
+    if (sizeNeeded == 0) { return std::string(); }
+    std::string result(sizeNeeded, 0);
+    WideCharToMultiByte(CP_UTF8, 0, str.data(), static_cast<int>(str.size()), result.data(), sizeNeeded, NULL, NULL);
+    return result;
 }
 struct D3DResourceLeakChecker {
-	~D3DResourceLeakChecker()
-	{
-		Microsoft::WRL::ComPtr<IDXGIDebug1> debug;
-		if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&debug)))) {
-			debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
-			debug->ReportLiveObjects(DXGI_DEBUG_APP, DXGI_DEBUG_RLO_ALL);
-			debug->ReportLiveObjects(DXGI_DEBUG_D3D12, DXGI_DEBUG_RLO_ALL);
-		}
-	}
+    ~D3DResourceLeakChecker()
+    {
+        Microsoft::WRL::ComPtr<IDXGIDebug1> debug;
+        if (SUCCEEDED(DXGIGetDebugInterface1(0, IID_PPV_ARGS(&debug)))) {
+            debug->ReportLiveObjects(DXGI_DEBUG_ALL, DXGI_DEBUG_RLO_ALL);
+            debug->ReportLiveObjects(DXGI_DEBUG_APP, DXGI_DEBUG_RLO_ALL);
+            debug->ReportLiveObjects(DXGI_DEBUG_D3D12, DXGI_DEBUG_RLO_ALL);
+        }
+    }
 };
 
-// ===============================================
+// ★ GameScene の enum
+enum class GameScene {
+    Title,      // タイトルシーン
+    GamePlay,   // ゲームプレイシーン
+    GameOver,   // ゲームオーバーシーン
+    GameClear   // ゲームクリアシーン
+};
+
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int)
 {
-	D3DResourceLeakChecker leakChecker;
+    D3DResourceLeakChecker leakChecker;
+    WinApp* winApp = WinApp::GetInstance();
+    winApp->Initialize();
+    DirectXCommon* dxCommon = DirectXCommon::GetInstance();
+    dxCommon->Initialize(winApp);
+    Input::GetInstance()->Initialize();
+    CoInitializeEx(0, COINIT_MULTITHREADED); // "T" のみ
+    SetUnhandledExceptionFilter(ExportDump);
+    Microsoft::WRL::ComPtr<IXAudio2> xAudio2;
+    IXAudio2MasteringVoice* masterVoice;
+    XAudio2Create(&xAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
+    xAudio2->CreateMasteringVoice(&masterVoice);
+    ID3D12Device* device = dxCommon->GetDevice();
+    GraphicsPipeline* graphicsPipeline = new GraphicsPipeline();
+    graphicsPipeline->Initialize(device);
+    ID3D12GraphicsCommandList* commandList = dxCommon->GetCommandList();
 
-	WinApp* winApp = WinApp::GetInstance();
-	winApp->Initialize();
+    // --- ▼▼▼ リソースの宣言 (★ 変更： new は後回し) ▼▼▼ ---
+    MapChip* mapChip = nullptr;
+    Model* playerModel = nullptr; 
+    Player* player = nullptr;
 
-	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
-	dxCommon->Initialize(winApp);
+    std::vector<Trap*> traps_;
+    std::vector<FallingBlock*> fallingBlocks_;
+    Model* goalModel_ = nullptr;
+    // --- ▲▲▲ リソースの宣言 ▲▲▲ ---
 
-	CoInitializeEx(0, COINIT_MULTITHREADED);
-	SetUnhandledExceptionFilter(ExportDump);
 
-	Microsoft::WRL::ComPtr<IXAudio2> xAudio2;
-	IXAudio2MasteringVoice* masterVoice;
-	XAudio2Create(&xAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
-	xAudio2->CreateMasteringVoice(&masterVoice);
+    Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
 
-	ID3D12Device* device = dxCommon->GetDevice();
-	GraphicsPipeline* graphicsPipeline = new GraphicsPipeline();
-	graphicsPipeline->Initialize(device);
+    // プレイヤーのテクスチャをロード (変更なし)
+    std::string playerTexturePath = "Resources/player/player.png";
+    DirectX::ScratchImage playerMipImages = LoadTexture(playerTexturePath);
+    const DirectX::TexMetadata& playerMetadata = playerMipImages.GetMetadata();
+    Microsoft::WRL::ComPtr<ID3D12Resource> playerTextureResource = CreateTextureResource(device, playerMetadata);
+    Microsoft::WRL::ComPtr<ID3D12Resource> playerIntermediateResource = UploadTextureData(playerTextureResource.Get(), playerMipImages, device, commandList);
 
-	ID3D12GraphicsCommandList* commandList = dxCommon->GetCommandList();
+    // "block.png" を読み込む (変更なし)
+    std::string blockTexturePath = "Resources/block/block.png";
+    DirectX::ScratchImage blockMipImages = LoadTexture(blockTexturePath);
+    if (blockMipImages.GetImageCount() == 0) {
+        OutputDebugStringA("ERROR: Failed to load block.png!\n");
+        assert(false && "Failed to load block.png");
+    }
+    const DirectX::TexMetadata& blockMetadata = blockMipImages.GetMetadata();
+    Microsoft::WRL::ComPtr<ID3D12Resource> blockTextureResource = CreateTextureResource(device, blockMetadata);
+    Microsoft::WRL::ComPtr<ID3D12Resource> blockIntermediateResource = UploadTextureData(blockTextureResource.Get(), blockMipImages, device, commandList);
 
-	Model* model = Model::Create("resources", "Plane.obj", device);
+    // "cube.jpg" を読み込む (変更なし)
+    std::string cubeTexturePath = "Resources/cube/cube.jpg";
+    DirectX::ScratchImage cubeMipImages = LoadTexture(cubeTexturePath);
+    if (cubeMipImages.GetImageCount() == 0) {
+        OutputDebugStringA("ERROR: Failed to load cube.jpg!\n");
+        assert(false && "Failed to load cube.jpg");
+    }
+    const DirectX::TexMetadata& cubeMetadata = cubeMipImages.GetMetadata();
+    Microsoft::WRL::ComPtr<ID3D12Resource> cubeTextureResource = CreateTextureResource(device, cubeMetadata);
+    Microsoft::WRL::ComPtr<ID3D12Resource> cubeIntermediateResource = UploadTextureData(cubeTextureResource.Get(), cubeMipImages, device, commandList);
 
-	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap> srvDescriptorHeap = CreateDescriptorHeap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 128, true);
+    
+    const uint32_t descriptorSizeSRV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-	DirectX::ScratchImage mipImages = LoadTexture("resources/uvChecker.png");
-	const DirectX::TexMetadata& metadata = mipImages.GetMetadata();
-	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource = CreateTextureResource(device, metadata);
-	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource = UploadTextureData(textureResource.Get(), mipImages, device, commandList);
+    // プレイヤーテクスチャ用のSRVを作成（ヒープの2番目） (変更なし)
+    D3D12_SHADER_RESOURCE_VIEW_DESC playerSrvDesc{};
+    playerSrvDesc.Format = playerMetadata.format;
+    playerSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    playerSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    playerSrvDesc.Texture2D.MipLevels = UINT(playerMetadata.mipLevels);
+    D3D12_CPU_DESCRIPTOR_HANDLE playerTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 2);
+    D3D12_GPU_DESCRIPTOR_HANDLE playerTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 2);
+    device->CreateShaderResourceView(playerTextureResource.Get(), &playerSrvDesc, playerTextureSrvHandleCPU);
 
-	std::string planeTexturePath = "resources/monsterBall.png";
-	DirectX::ScratchImage mipImages2 = LoadTexture(planeTexturePath);
-	const DirectX::TexMetadata& metadata2 = mipImages2.GetMetadata();
-	Microsoft::WRL::ComPtr<ID3D12Resource> textureResource2 = CreateTextureResource(device, metadata2);
-	Microsoft::WRL::ComPtr<ID3D12Resource> intermediateResource2 = UploadTextureData(textureResource2.Get(), mipImages2, device, commandList);
+    // block.png の SRV を作成 (ヒープの3番目) (変更なし)
+    D3D12_SHADER_RESOURCE_VIEW_DESC blockSrvDesc{};
+    blockSrvDesc.Format = blockMetadata.format;
+    blockSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    blockSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    blockSrvDesc.Texture2D.MipLevels = UINT(blockMetadata.mipLevels);
+    D3D12_CPU_DESCRIPTOR_HANDLE blockTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 3);
+    D3D12_GPU_DESCRIPTOR_HANDLE blockTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 3);
+    device->CreateShaderResourceView(blockTextureResource.Get(), &blockSrvDesc, blockTextureSrvHandleCPU);
 
-	const uint32_t descriptorSizeSRV = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc{};
-	srvDesc.Format = metadata.format;
-	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc.Texture2D.MipLevels = UINT(metadata.mipLevels);
-	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc2{};
-	srvDesc2.Format = metadata2.format;
-	srvDesc2.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	srvDesc2.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-	srvDesc2.Texture2D.MipLevels = UINT(metadata2.mipLevels);
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 1);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 1);
-	D3D12_CPU_DESCRIPTOR_HANDLE textureSrvHandleCPU2 = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 2);
-	D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandleGPU2 = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 2);
-	device->CreateShaderResourceView(textureResource.Get(), &srvDesc, textureSrvHandleCPU);
-	device->CreateShaderResourceView(textureResource2.Get(), &srvDesc2, textureSrvHandleCPU2);
+    // cube.jpg の SRV を作成 (ヒープの4番目) (変更なし)
+    D3D12_SHADER_RESOURCE_VIEW_DESC cubeSrvDesc{};
+    cubeSrvDesc.Format = cubeMetadata.format;
+    cubeSrvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    cubeSrvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    cubeSrvDesc.Texture2D.MipLevels = UINT(cubeMetadata.mipLevels);
+    D3D12_CPU_DESCRIPTOR_HANDLE cubeTextureSrvHandleCPU = GetCPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 4);
+    D3D12_GPU_DESCRIPTOR_HANDLE cubeTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 4);
+    device->CreateShaderResourceView(cubeTextureResource.Get(), &cubeSrvDesc, cubeTextureSrvHandleCPU);
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> vertexResourceSprite = CreateBufferResource(device, sizeof(VertexData) * 4);
-	VertexData* vertexDataSprite = nullptr;
-	vertexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&vertexDataSprite));
-	vertexDataSprite[0].position = { 0.0f, 360.0f, 0.0f, 1.0f };
-	vertexDataSprite[0].texcoord = { 0.0f, 1.0f };
-	vertexDataSprite[1].position = { 0.0f, 0.0f, 0.0f, 1.0f };
-	vertexDataSprite[1].texcoord = { 0.0f, 0.0f };
-	vertexDataSprite[2].position = { 640.0f, 360.0f, 0.0f, 1.0f };
-	vertexDataSprite[2].texcoord = { 1.0f, 1.0f };
-	vertexDataSprite[3].position = { 640.0f, 0.0f, 0.0f, 1.0f };
-	vertexDataSprite[3].texcoord = { 1.0f, 0.0f };
-	D3D12_VERTEX_BUFFER_VIEW vertexBufferViewSprite{};
-	vertexBufferViewSprite.BufferLocation = vertexResourceSprite->GetGPUVirtualAddress();
-	vertexBufferViewSprite.SizeInBytes = sizeof(VertexData) * 4;
-	vertexBufferViewSprite.StrideInBytes = sizeof(VertexData);
-	Microsoft::WRL::ComPtr<ID3D12Resource> indexResourceSprite = CreateBufferResource(device, sizeof(uint32_t) * 6);
-	uint32_t* indexDataSprite = nullptr;
-	indexResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&indexDataSprite));
-	indexDataSprite[0] = 0; indexDataSprite[1] = 1; indexDataSprite[2] = 2;
-	indexDataSprite[3] = 1; indexDataSprite[4] = 3; indexDataSprite[5] = 2;
-	D3D12_INDEX_BUFFER_VIEW indexBufferViewSprite{};
-	indexBufferViewSprite.BufferLocation = indexResourceSprite->GetGPUVirtualAddress();
-	indexBufferViewSprite.SizeInBytes = sizeof(uint32_t) * 6;
-	indexBufferViewSprite.Format = DXGI_FORMAT_R32_UINT;
+    // (★ mapChip->Load は GamePlay 初期化へ移動)
+    
+    // (★ トラップ生成は GamePlay 初期化へ移動)
 
-	Microsoft::WRL::ComPtr<ID3D12Resource> materialResourceSprite = CreateBufferResource(device, sizeof(Material));
-	Material* materialDataSprite = nullptr;
-	materialResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&materialDataSprite));
-	materialDataSprite->color = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-	materialDataSprite->uvTransform = MakeIdentity4x4();
-	materialDataSprite->enableLighting = false;
-	Microsoft::WRL::ComPtr<ID3D12Resource> transformationMatrixResourceSprite = CreateBufferResource(device, sizeof(TransformationMatrix));
-	TransformationMatrix* transformationMatrixDataSprite = nullptr;
-	transformationMatrixResourceSprite->Map(0, nullptr, reinterpret_cast<void**>(&transformationMatrixDataSprite));
-	Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
-	DirectionalLight* directionalLightData = nullptr;
-	directionalLightResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLightData));
-	directionalLightData->color = { 1.0f, 1.0f, 1.0f, 1.0f };
-	directionalLightData->direction = Normalize({ 0.0f, -1.0f, 0.0f });
-	directionalLightData->intensity = 1.0f;
-	Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGpuResource = CreateBufferResource(device, sizeof(CameraForGpu));
-	CameraForGpu* cameraForGpuData = nullptr;
-	cameraForGpuResource->Map(0, nullptr, reinterpret_cast<void**>(&cameraForGpuData));
+    // (★ FallingBlock 生成は GamePlay 初期化へ移動)
+    
+    // (★ Goal 生成は GamePlay 初期化へ移動)
 
-	Transform cameraTransform{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -5.0f } };
-	Transform transformSprite{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
-	Transform uvTransformSprite{ { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f } };
-	bool useMonstarBall = true;
-	int spriteBlendMode = kBlendModeNormal;
 
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGui::StyleColorsClassic();
-	ImGui_ImplWin32_Init(winApp->GetHwnd());
-	ImGui_ImplDX12_Init(device, dxCommon->GetBackBufferCount(), dxCommon->GetRtvDesc().Format,
-		srvDescriptorHeap.Get(),
-		srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
-		srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+    // ライトの初期化 (変更なし)
+    Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
+    DirectionalLight* directionalLightData = nullptr;
+    directionalLightResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLightData));
+    directionalLightData->color = { 1.0f, 1.0f, 1.0f, 1.0f };
+    directionalLightData->direction = Normalize({ 0.0f, -1.0f, 0.0f });
+    directionalLightData->intensity = 1.0f;
 
-	while (!winApp->IsEndRequested()) {
-		winApp->ProcessMessage();
+    // Camera クラスを作成・初期化 (変更なし)
+    Camera* camera = new Camera();
+    camera->Initialize(); 
 
-		ImGui_ImplDX12_NewFrame();
-		ImGui_ImplWin32_NewFrame();
-		ImGui::NewFrame();
-		ImGui::ShowDemoWindow();
-		ImGui::Begin("Controls");
-		ImGui::SliderFloat3("Scale", &model->transform.scale.x, 0.1f, 5.0f);
-		ImGui::SliderAngle("RotateX", &model->transform.rotate.x, -180.0f, 180.0f);
-		ImGui::SliderAngle("RotateY", &model->transform.rotate.y, -180.0f, 180.0f);
-		ImGui::SliderAngle("RotateZ", &model->transform.rotate.z, -180.0f, 180.0f);
-		ImGui::SliderFloat3("Translate", &model->transform.translate.x, -5.0f, 5.0f);
-		ImGui::Checkbox("useMonstarBall", &useMonstarBall);
-		ImGui::SliderFloat3("Light Direction", &directionalLightData->direction.x, -1.0f, 1.0f);
-		ImGui::Text("UVTransform");
-		ImGui::ColorEdit4("Sprite Color", &materialDataSprite->color.x);
-		const char* blendModeItems[] = { "None", "Normal", "Add", "Subtract", "Multiply" };
-		ImGui::Combo("Sprite BlendMode", &spriteBlendMode, blendModeItems, IM_ARRAYSIZE(blendModeItems));
-		ImGui::DragFloat2("UVTranslate", &uvTransformSprite.translate.x, 0.01f, -10.0f, 10.0f);
-		ImGui::DragFloat2("UVScale", &uvTransformSprite.scale.x, 0.01f, -10.0f, 10.0f);
-		ImGui::SliderAngle("UVRotate", &uvTransformSprite.rotate.z);
-		ImGui::SliderFloat3("TranslateSprite", &transformSprite.translate.x, 0.0f, WinApp::kClientWidth);
-		ImGui::End();
-		ImGui::Render();
+    // カメラのワールド座標をGPUに送るためのリソース (変更なし)
+    Microsoft::WRL::ComPtr<ID3D12Resource> cameraForGpuResource = CreateBufferResource(device, sizeof(CameraForGpu));
+    CameraForGpu* cameraForGpuData = nullptr;
+    cameraForGpuResource->Map(0, nullptr, reinterpret_cast<void**>(&cameraForGpuData));
 
-		Matrix4x4 cameraMatrix = MakeAffineMatrix(cameraTransform.scale, cameraTransform.rotate, cameraTransform.translate);
-		Matrix4x4 viewMatrix = Inverse(cameraMatrix);
-		Matrix4x4 projectionMatrix = MakePerspectiveFovMatrix(0.45f, (float)WinApp::kClientWidth / (float)WinApp::kClientHeight, 0.1f, 100.0f);
-		Matrix4x4 viewProjectionMatrix = Multiply(viewMatrix, projectionMatrix);
+    // ImGuiの初期化 (変更なし)
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsClassic();
+    ImGui_ImplWin32_Init(winApp->GetHwnd());
+    ImGui_ImplDX12_Init(device, dxCommon->GetBackBufferCount(), dxCommon->GetRtvDesc().Format,
+        srvDescriptorHeap.Get(),
+        srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+        srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
-		cameraForGpuData->worldPosition = cameraTransform.translate;
 
-		Matrix4x4 worldMatrixSprite = MakeAffineMatrix(transformSprite.scale, transformSprite.rotate, transformSprite.translate);
-		Matrix4x4 viewMatrixSprite = MakeIdentity4x4();
-		Matrix4x4 projectionMatrixSprite = MakeOrthographicMatrix(0.0f, 0.0f, (float)WinApp::kClientWidth, (float)WinApp::kClientHeight, 0.0f, 100.0f);
-		transformationMatrixDataSprite->WVP = Multiply(worldMatrixSprite, Multiply(viewMatrixSprite, projectionMatrixSprite));
-		transformationMatrixDataSprite->World = worldMatrixSprite;
-		Matrix4x4 uvTransformMatrix = MakeAffineMatrix(uvTransformSprite.scale, uvTransformSprite.rotate, uvTransformSprite.translate);
-		materialDataSprite->uvTransform = uvTransformMatrix;
-		directionalLightData->direction = Normalize(directionalLightData->direction);
+    // --- ▼▼▼ ★ 追加 ★ ▼▼▼ ---
+    GameScene currentScene = GameScene::Title; // 初期シーン
+    bool isGameInitialized = false; // ゲームリソースが初期化されたか
+    bool isLoadingNextMap = false; // (GamePlay 内で使う)
+    // --- ▲▲▲ ★ 追加 ★ ▲▲▲ ---
 
-		dxCommon->PreDraw();
+    // ★ ゲームプレイリソースを解放するラムダ関数
+    auto cleanupGameResources = [&]() {
+        delete mapChip;
+        mapChip = nullptr;
+        delete player;
+        player = nullptr;
+        delete playerModel; // playerModel は GamePlay 初期化で new する
+        playerModel = nullptr;
 
-		commandList->SetGraphicsRootSignature(graphicsPipeline->GetRootSignature());
-		ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get() };
-		commandList->SetDescriptorHeaps(1, descriptorHeaps);
-		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        for (Trap* trap : traps_) {
+            delete trap;
+        }
+        traps_.clear();
 
-		commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
-		commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress());
+        for (FallingBlock* block : fallingBlocks_) {
+            delete block;
+        }
+        fallingBlocks_.clear();
 
-		commandList->SetPipelineState(graphicsPipeline->GetPipelineState(kBlendModeNone));
-		model->Draw(
-			commandList,
-			viewProjectionMatrix,
-			directionalLightResource->GetGPUVirtualAddress(),
-			useMonstarBall ? textureSrvHandleGPU2 : textureSrvHandleGPU);
+        delete goalModel_;
+        goalModel_ = nullptr;
 
-		commandList->SetPipelineState(graphicsPipeline->GetPipelineState(static_cast<BlendMode>(spriteBlendMode)));
-		commandList->IASetVertexBuffers(0, 1, &vertexBufferViewSprite);
-		commandList->IASetIndexBuffer(&indexBufferViewSprite);
-		commandList->SetGraphicsRootConstantBufferView(0, materialResourceSprite->GetGPUVirtualAddress());
-		commandList->SetGraphicsRootConstantBufferView(1, transformationMatrixResourceSprite->GetGPUVirtualAddress());
-		commandList->SetGraphicsRootDescriptorTable(2, textureSrvHandleGPU);
-		commandList->DrawIndexedInstanced(6, 1, 0, 0, 0);
+        isGameInitialized = false; // 未初期化状態に戻す
+    };
 
-		ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
 
-		dxCommon->PostDraw();
-	}
+    // メインループ
+    while (!winApp->IsEndRequested()) {
+        winApp->ProcessMessage();
+        Input::GetInstance()->Update();
+        Input* input = Input::GetInstance(); // わかりやすくするため
 
-	ImGui_ImplDX12_Shutdown();
-	ImGui_ImplWin32_Shutdown();
-	ImGui::DestroyContext();
+        // ImGuiフレーム開始 (共通)
+        ImGui_ImplDX12_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
 
-	delete model;
-	delete graphicsPipeline;
+        // --- ▼▼▼ ★ 変更： シーンベースの更新処理 ▼▼▼ ---
+        switch (currentScene) {
 
-	dxCommon->Finalize();
+        // ========================================================
+        case GameScene::Title:
+        {
+            // --- 更新 (Title) ---
+            if (input->IsKeyPressed(VK_RETURN)) { // Enterキー
+                currentScene = GameScene::GamePlay;
+            }
 
-	CoUninitialize();
+            // --- 描画 (Title) ---
+            ImGui::Begin("TITLE SCREEN");
+            ImVec2 windowSize(300, 120); // 少し縦幅を広げる
+            ImGui::SetWindowSize(windowSize); 
+            ImGui::SetWindowPos(ImVec2(
+                (WinApp::kClientWidth - windowSize.x) * 0.5f,
+                (WinApp::kClientHeight - windowSize.y) * 0.5f
+            )); 
+            ImGui::Text("My Awesome Game"); // (ゲームタイトルは適宜変更してください)
+            ImGui::Separator();
+            ImGui::Text("Press ENTER to Start");
+            ImGui::End();
 
-	winApp->Finalize();
+            break; // Title シーン終わり
+        }
+        // ========================================================
 
-	return 0;
+
+        // ========================================================
+        case GameScene::GamePlay:
+        {
+            // --- ★ ゲームプレイリソースの初期化 (初回のみ) ★ ---
+            if (!isGameInitialized) {
+                
+                // (元々 WinMain の冒頭にあった初期化処理をここに移動)
+                
+                mapChip = new MapChip();
+                playerModel = Model::Create("Resources/player", "player.obj", device);
+                player = new Player();
+
+                mapChip->Load("Resources/map.csv", device);
+                player->Initialize(playerModel, mapChip);
+
+                // --- ▼▼▼ map.csv 用のトラップを手動で生成 (省略なし) ▼▼▼ ---
+                size_t mapHeight = 15; // CSVの総行数
+                auto csvYToWorldY = [&](int csvY) {
+                    return (static_cast<float>(mapHeight - 1) - static_cast<float>(csvY)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
+                    };
+
+                // 1. 左から来るトラップ (CSV y=4, 5, 6)
+                float stopMarginNormal = MapChip::kBlockSize * 1.0f;
+
+                Trap* trapL1 = new Trap();
+                trapL1->Initialize(device, csvYToWorldY(4), Trap::AttackSide::FromLeft, stopMarginNormal);
+                traps_.push_back(trapL1);
+
+                Trap* trapL2 = new Trap();
+                trapL2->Initialize(device, csvYToWorldY(5), Trap::AttackSide::FromLeft, stopMarginNormal);
+                traps_.push_back(trapL2);
+
+                Trap* trapL3 = new Trap();
+                trapL3->Initialize(device, csvYToWorldY(6), Trap::AttackSide::FromLeft, stopMarginNormal);
+                traps_.push_back(trapL3);
+
+                // 2. 右から来るトラップ (通常) (CSV y=8, 9, 10)
+                Trap* trapR1 = new Trap();
+                trapR1->Initialize(device, csvYToWorldY(8), Trap::AttackSide::FromRight, stopMarginNormal);
+                traps_.push_back(trapR1);
+
+                Trap* trapR2 = new Trap();
+                trapR2->Initialize(device, csvYToWorldY(9), Trap::AttackSide::FromRight, stopMarginNormal);
+                traps_.push_back(trapR2);
+
+                Trap* trapR3 = new Trap();
+                trapR3->Initialize(device, csvYToWorldY(10), Trap::AttackSide::FromRight, stopMarginNormal);
+                traps_.push_back(trapR3);
+
+                // 3. 右から来るトラップ (Short) (CSV y=12, 13)
+                float stopMarginShort = MapChip::kBlockSize * 0.2f;
+
+                Trap* trapRS1 = new Trap();
+                trapRS1->Initialize(device, csvYToWorldY(12), Trap::AttackSide::FromRight, stopMarginShort);
+                traps_.push_back(trapRS1);
+
+                Trap* trapRS2 = new Trap();
+                trapRS2->Initialize(device, csvYToWorldY(13), Trap::AttackSide::FromRight, stopMarginShort);
+                traps_.push_back(trapRS2);
+                // --- ▲▲▲ トラップ生成完了 ▲▲▲ ---
+
+                // 4. マップチップから 3, 4 の情報を取得して FallingBlock を生成
+                const std::vector<DynamicBlockData>& dynamicBlocks = mapChip->GetDynamicBlocks();
+                for (const DynamicBlockData& data : dynamicBlocks) {
+                    FallingBlock* newBlock = new FallingBlock();
+                    newBlock->Initialize(device, data.position, static_cast<BlockType>(data.type));
+                    fallingBlocks_.push_back(newBlock);
+                }
+
+                // 5. マップチップから 5 (ゴール) の情報を取得してモデルを生成
+                if (mapChip->HasGoal()) {
+                    goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
+                    goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
+                    goalModel_->transform.rotate = { 0.0f, 0.0f, 0.0f };
+                    goalModel_->transform.translate = mapChip->GetGoalPosition();
+                }
+
+                isLoadingNextMap = false; // マップ遷移フラグもリセット
+                isGameInitialized = true; // 初期化完了
+            }
+
+            // --- 更新 (GamePlay) ---
+            if (!isLoadingNextMap) {
+                if (player->IsAlive()) {
+                    player->Update();
+                } else {
+                    // ★ 死亡したら GameOver シーンへ
+                    currentScene = GameScene::GameOver;
+                }
+
+                // すべてのトラップを更新
+                for (Trap* trap : traps_) {
+                    trap->Update(player);
+                }
+                // すべての落ちるブロックを更新
+                for (FallingBlock* block : fallingBlocks_) {
+                    block->Update(player, mapChip);
+                }
+
+                // プレイヤーがマップ外に出たかチェック
+                if (player->IsExiting()) {
+                    isLoadingNextMap = true; // 遷移フラグを立てる
+                }
+
+                // プレイヤーがゴールしたかチェック
+                if (player->IsAlive() && mapChip->HasGoal() && mapChip->CheckGoalCollision(player->GetPosition(), player->GetHalfSize())) {
+                    // ★ クリアしたら GameClear シーンへ
+                    currentScene = GameScene::GameClear;
+                }
+            }
+            
+            player->ImGui_Draw();
+
+            // --- マップ遷移処理 (省略なし) ---
+            if (isLoadingNextMap) {
+
+                // 1. 古いトラップをすべて削除
+                for (Trap* trap : traps_) {
+                    delete trap;
+                }
+                traps_.clear();
+
+                // 1b. 古い落ちるブロックをすべて削除
+                for (FallingBlock* block : fallingBlocks_) {
+                    delete block;
+                }
+                fallingBlocks_.clear();
+
+                // 1c. 古いゴールを削除
+                delete goalModel_;
+                goalModel_ = nullptr;
+
+
+                // 2. 新しいマップをロード
+                mapChip->Load("Resources/map2.csv", device);
+
+                // 3. map2.csv 用の新しい開始位置を決定 (左下)
+                size_t map2Height = 15;
+                float spawnY = (static_cast<float>(map2Height - 1) - 14.0f) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
+                float spawnX = (static_cast<float>(0)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
+                Vector3 map2StartPosition = { spawnX, spawnY, 0.0f };
+                player->SetPosition(map2StartPosition);
+
+                // 4. map2.csv 用の新しい動的オブジェクト (3, 4) を生成
+                const std::vector<DynamicBlockData>& dynamicBlocks2 = mapChip->GetDynamicBlocks();
+                for (const DynamicBlockData& data : dynamicBlocks2) {
+                    FallingBlock* newBlock = new FallingBlock();
+                    newBlock->Initialize(device, data.position, static_cast<BlockType>(data.type));
+                    fallingBlocks_.push_back(newBlock);
+                }
+
+                // 5. map2.csv 用のゴール (5) を生成
+                if (mapChip->HasGoal()) {
+                    goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
+                    goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
+                    goalModel_->transform.rotate = { 0.0f, 0.0f, 0.0f };
+                    goalModel_->transform.translate = mapChip->GetGoalPosition();
+                }
+
+                // 6. 遷移完了
+                isLoadingNextMap = false;
+            }
+
+            break; // GamePlay シーン終わり
+        }
+        // ========================================================
+
+
+        // ========================================================
+case GameScene::GameOver: // ← ★ これがゲームオーバー画面です
+{
+    // --- 更新 & 描画 (GameOver) ---
+    ImGui::Begin("GAME OVER");
+    ImGui::Text("You Died!");
+
+    if (ImGui::Button("Retry Game")) { // リトライ処理
+        cleanupGameResources();
+        currentScene = GameScene::GamePlay;
+    }
+    if (ImGui::Button("Back to Title")) { // タイトルへ戻る処理
+        cleanupGameResources();
+        currentScene = GameScene::Title;
+    }
+    ImGui::End();
+
+    break;
+}
+// ========================================================
+
+
+// ========================================================
+case GameScene::GameClear: // ← ★ これがゲームクリア画面です
+{
+    // --- 更新 & 描画 (GameClear) ---
+    ImGui::Begin("GAME CLEAR");
+    ImGui::Text("Congratulations!");
+
+    if (ImGui::Button("Back to Title")) { // タイトルへ戻る処理
+        cleanupGameResources();
+        currentScene = GameScene::Title;
+    }
+    ImGui::End();
+
+    break;
+}
+        // ========================================================
+        
+        } // --- switch (currentScene) 終わり ---
+
+
+        ImGui::Render();
+
+        const Matrix4x4& viewProjectionMatrix = camera->GetViewProjectionMatrix();
+        cameraForGpuData->worldPosition = camera->GetTransform().translate;
+        directionalLightData->direction = Normalize(directionalLightData->direction);
+
+        
+        // --- ▼▼▼ 描画処理 (共通処理) ▼▼▼ ---
+        dxCommon->PreDraw();
+
+        commandList->SetGraphicsRootSignature(graphicsPipeline->GetRootSignature());
+        ID3D12DescriptorHeap* descriptorHeaps[] = { srvDescriptorHeap.Get() };
+        commandList->SetDescriptorHeaps(1, descriptorHeaps);
+        commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        commandList->SetGraphicsRootConstantBufferView(3, directionalLightResource->GetGPUVirtualAddress());
+        commandList->SetGraphicsRootConstantBufferView(4, cameraForGpuResource->GetGPUVirtualAddress());
+        commandList->SetPipelineState(graphicsPipeline->GetPipelineState(kBlendModeNone));
+
+        // --- ★ 描画処理 (シーン分岐) ★ ---
+        // (GamePlay, GameOver, GameClear シーンではゲームオブジェクトを描画する)
+        if (currentScene == GameScene::GamePlay || currentScene == GameScene::GameOver || currentScene == GameScene::GameClear) 
+        {
+            // ゲームが初期化されていないと (isGameInitialized == false) 各ポインタは nullptr
+            if (isGameInitialized) {
+                // マップの描画
+                mapChip->Draw(
+                    commandList,
+                    viewProjectionMatrix,
+                    directionalLightResource->GetGPUVirtualAddress(),
+                    blockTextureSrvHandleGPU); 
+
+                // プレイヤーの描画
+                player->Draw(
+                    commandList,
+                    viewProjectionMatrix,
+                    directionalLightResource->GetGPUVirtualAddress(),
+                    playerTextureSrvHandleGPU);
+
+                // すべてのトラップ(横)を描画
+                for (Trap* trap : traps_) {
+                    trap->Draw(
+                        commandList,
+                        viewProjectionMatrix,
+                        directionalLightResource->GetGPUVirtualAddress(),
+                        cubeTextureSrvHandleGPU); 
+                }
+
+                // すべての落ちるブロック(3, 4)を描画
+                for (FallingBlock* block : fallingBlocks_) {
+                    block->Draw(
+                        commandList,
+                        viewProjectionMatrix,
+                        directionalLightResource->GetGPUVirtualAddress(),
+                        blockTextureSrvHandleGPU); 
+                }
+
+                // ゴール(5)を描画
+                if (goalModel_) {
+                    goalModel_->Draw(
+                        commandList,
+                        viewProjectionMatrix,
+                        directionalLightResource->GetGPUVirtualAddress(),
+                        cubeTextureSrvHandleGPU);
+                }
+            }
+        }
+        // (Title シーンは ImGui 以外に描画するものがない)
+
+
+        // ImGui の描画 (全シーン共通)
+        ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
+        dxCommon->PostDraw();
+        // --- ▲▲▲ 描画処理 ▲▲▲ ---
+
+    } // --- メインループ (while) 終わり ---
+
+    ImGui_ImplDX12_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+
+    // --- ▼▼▼ ★ 変更： 終了処理 ▼▼▼ ---
+    
+    // もしゲームプレイ中に終了したらリソースを解放する
+    if (isGameInitialized) {
+        cleanupGameResources(); // ★ 作成した解放関数を呼ぶ
+    }
+    
+    // (元からあった解放処理)
+    delete graphicsPipeline;
+    delete camera;
+    
+    // (mapChip, player, playerModel, traps_, fallingBlocks_, goalModel_ は
+    //  cleanupGameResources で解放済み or そもそも new されていない)
+
+    dxCommon->Finalize();
+    CoUninitialize();
+    winApp->Finalize();
+    return 0;
 }

@@ -16,6 +16,30 @@
     <Filter Include="imgui">
       <UniqueIdentifier>{a97b0c91-ccd7-43d3-aa15-079faef7f3df}</UniqueIdentifier>
     </Filter>
+    <Filter Include="ソース ファイル\Basic functions">
+      <UniqueIdentifier>{e303c121-c005-438e-a8bc-9ad148f46e5f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\D3D12Util">
+      <UniqueIdentifier>{85a53a87-3f70-4711-b304-d1c97e70ef9f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Math">
+      <UniqueIdentifier>{40ab18b1-552f-4fb6-905a-9e563d440b26}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Model">
+      <UniqueIdentifier>{c740a104-fce5-46ae-a60c-b144d1076d73}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Pipeline state">
+      <UniqueIdentifier>{5d2b2e63-0c4a-48dd-a63c-862b4b8434a0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Window">
+      <UniqueIdentifier>{3d78e507-41b0-4060-921b-d82455023282}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Input">
+      <UniqueIdentifier>{6ea613b3-3b80-430a-a4ef-63bcab29bf24}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\Player">
+      <UniqueIdentifier>{0718be70-9f6c-46fb-9ed2-3258a4d05a20}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -42,22 +66,40 @@
     <ClCompile Include="externals\imgui\imgui_widgets.cpp">
       <Filter>imgui</Filter>
     </ClCompile>
-    <ClCompile Include="WinApp.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
     <ClCompile Include="DirectXCommon.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="GraphicsPipeline.cpp">
-      <Filter>ソース ファイル</Filter>
+      <Filter>ソース ファイル\Basic functions</Filter>
     </ClCompile>
     <ClCompile Include="D3D12Util.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="Model.cpp">
-      <Filter>ソース ファイル</Filter>
+      <Filter>ソース ファイル\D3D12Util</Filter>
     </ClCompile>
     <ClCompile Include="MathUtil.cpp">
+      <Filter>ソース ファイル\Math</Filter>
+    </ClCompile>
+    <ClCompile Include="GraphicsPipeline.cpp">
+      <Filter>ソース ファイル\Pipeline state</Filter>
+    </ClCompile>
+    <ClCompile Include="WinApp.cpp">
+      <Filter>ソース ファイル\Window</Filter>
+    </ClCompile>
+    <ClCompile Include="Input.cpp">
+      <Filter>ソース ファイル\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Model.cpp">
+      <Filter>ソース ファイル\Model</Filter>
+    </ClCompile>
+    <ClCompile Include="Player.cpp">
+      <Filter>ソース ファイル\Player</Filter>
+    </ClCompile>
+    <ClCompile Include="MapChip.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Camera.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="Trap.cpp">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="FallingBlock.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
@@ -90,28 +132,46 @@
     <ClInclude Include="externals\imgui\imstb_truetype.h">
       <Filter>imgui</Filter>
     </ClInclude>
-    <ClInclude Include="WinApp.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="DirectXCommon.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="GraphicsPipeline.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="D3D12Util.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="Model.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="MathTypes.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
     <ClInclude Include="DataTypes.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
+    <ClInclude Include="DirectXCommon.h">
+      <Filter>ソース ファイル\Basic functions</Filter>
+    </ClInclude>
+    <ClInclude Include="D3D12Util.h">
+      <Filter>ソース ファイル\D3D12Util</Filter>
+    </ClInclude>
+    <ClInclude Include="MathTypes.h">
+      <Filter>ソース ファイル\Math</Filter>
+    </ClInclude>
     <ClInclude Include="MathUtil.h">
+      <Filter>ソース ファイル\Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Model.h">
+      <Filter>ソース ファイル\Model</Filter>
+    </ClInclude>
+    <ClInclude Include="GraphicsPipeline.h">
+      <Filter>ソース ファイル\Pipeline state</Filter>
+    </ClInclude>
+    <ClInclude Include="WinApp.h">
+      <Filter>ソース ファイル\Window</Filter>
+    </ClInclude>
+    <ClInclude Include="Input.h">
+      <Filter>ソース ファイル\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Player.h">
+      <Filter>ソース ファイル\Player</Filter>
+    </ClInclude>
+    <ClInclude Include="MapChip.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Camera.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="Trap.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="FallingBlock.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>
