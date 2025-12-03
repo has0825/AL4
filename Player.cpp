@@ -27,7 +27,7 @@ void Player::Update() {
 
     const float kMoveSpeed = 0.1f;
     const float kGravity = 0.025f;
-    const float kJumpPower = 0.45f;
+    const float kJumpPower = 0.35f;
     const float kWallSlideSpeed = 0.02f;
     const float kWallJumpPowerX = 0.3f;
     const float kWallJumpPowerY = 0.42f;
