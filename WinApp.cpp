@@ -53,15 +53,18 @@ void WinApp::Finalize() {
 
 bool WinApp::ProcessMessage() {
     MSG msg{};
-    // メッセージキューからメッセージを取得
-    if (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+
+    // ★★★ 修正点: if ではなく while にする ★★★
+    // これにより、溜まっているメッセージを全て処理しきってからゲームの更新に移るため、
+    // 入力遅延（ラグ）が解消されます。
+    while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
-    }
 
-    // 終了メッセージが来たらフラグを立てる
-    if (msg.message == WM_QUIT) {
-        endRequest_ = true;
+        // 終了メッセージが来たらフラグを立てる
+        if (msg.message == WM_QUIT) {
+            endRequest_ = true;
+        }
     }
 
     return endRequest_;

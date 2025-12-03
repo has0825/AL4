@@ -28,18 +28,31 @@ void Player::Update() {
     // --- 物理挙動で使う定数 ---
     const float kMoveSpeed = 0.1f;
     const float kGravity = 0.025f;
-    const float kJumpPower = 0.45f;
+    const float kJumpPower = 0.35f;
     const float kWallSlideSpeed = 0.02f;
     const float kWallJumpPowerX = 0.3f;
     const float kWallJumpPowerY = 0.42f;
     const float kPlayerHalfSize = 0.2f;
 
-    // ▼▼▼ ステップ1: 入力を処理して、このフレームのX方向の基本速度を決定する ▼▼▼
-    float moveX = 0.0f;
-    if (input->IsKeyDown('D')) { moveX = kMoveSpeed; }
-    if (input->IsKeyDown('A')) { moveX = -kMoveSpeed; }
+    // ▼▼▼ ステップ1: 入力を処理して、このフレームのX方向の基本速度を決定する (修正済み) ▼▼▼
 
+    // まずX方向の速度をリセット（これでボタンを離したら即座に停止します）
+    velocity_.x = 0.0f;
+
+    // 入力をチェック
+    float moveX = 0.0f;
+    if (input->IsKeyDown('D')) {
+        moveX = kMoveSpeed;
+    }
+    // 'A'と'D'が同時に押された場合、'A'を優先（または後勝ち）
+    if (input->IsKeyDown('A')) {
+        moveX = -kMoveSpeed;
+    }
+
+    // moveX を velocity_.x に設定
     velocity_.x = moveX;
+
+    // ▲▲▲ 修正完了 ▲▲▲
 
     // ▼▼▼ ステップ2: 物理演算と衝突判定 (Y -> X の順) ▼▼▼
 
@@ -117,8 +130,8 @@ void Player::Update() {
             float bottomExitY_Max = 0.7f;   // マップ下部 (CSV Y=14) の上限
 
             bool isOutOfMap = (playerRight > mapWidth); // 画面外か？
-            bool isAtTopExit = (transform_.translate.y > topExitY_Min);    // 上の出口か？
-            bool isAtBottomExit = (transform_.translate.y < bottomExitY_Max);  // 下の出口か？
+            bool isAtTopExit = (transform_.translate.y > topExitY_Min);     // 上の出口か？
+            bool isAtBottomExit = (transform_.translate.y < bottomExitY_Max);   // 下の出口か？
 
             // 「画面外」かつ「出口Y座標」の場合、衝突を *無視* する
             if (isOutOfMap && (isAtTopExit || isAtBottomExit)) {
@@ -268,9 +281,7 @@ void Player::SetPosition(const Vector3& pos) {
     jumpBufferTimer_ = 0.0f;
     model_->transform = transform_; // モデルにも反映
 
-    // ▼▼▼ ★★★ ここが修正点 ★★★ ▼▼▼
     // 渡された位置を、新しいリスポーン地点として記憶する
     initialPosition_ = pos;
-    // ▲▲▲ ★★★ 修正完了 ★★★ ▲▲▲
 }
 // --- ▲▲▲ 追加完了 ▲▲▲ ---
