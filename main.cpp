@@ -304,7 +304,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 playerModel = Model::Create("Resources/player", "player.obj", device);
                 player = new Player();
                 mapChip->Load("Resources/map.csv", device);
-                player->Initialize(playerModel, mapChip);
+                player->Initialize(playerModel, mapChip, device);
 
                 size_t mapHeight = 15;
                 auto csvYToWorldY = [&](int csvY) { return (static_cast<float>(mapHeight - 1) - static_cast<float>(csvY)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f); };
