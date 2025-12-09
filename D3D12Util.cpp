@@ -1,7 +1,10 @@
 #include "D3D12Util.h"
 #include <cassert>
+#include <vector>
+#include <filesystem> // パス確認用
+#include <iostream>   // ログ出力用
 
-// 外部で定義された関数のプロトタイプ宣言 (ConvertStringはまだmain.cppにあるため)
+// 外部で定義された関数のプロトタイプ宣言 (main.cppにある)
 std::wstring ConvertString(const std::string& str);
 
 Microsoft::WRL::ComPtr<ID3D12Resource> CreateBufferResource(ID3D12Device* device, size_t sizeInBytes)
@@ -48,7 +51,11 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateTextureResource(ID3D12Device* devic
     heapProperties.Type = D3D12_HEAP_TYPE_DEFAULT;
     Microsoft::WRL::ComPtr<ID3D12Resource> resource = nullptr;
     HRESULT hr = device->CreateCommittedResource(&heapProperties, D3D12_HEAP_FLAG_NONE, &resourceDesc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&resource));
-    assert(SUCCEEDED(hr));
+
+    // リソース作成失敗時のチェックを追加
+    if (FAILED(hr)) {
+        return nullptr;
+    }
     return resource.Get();
 }
 
@@ -76,6 +83,9 @@ Microsoft::WRL::ComPtr<ID3D12Resource> CreateDepthStencilTextureResource(ID3D12D
 
 Microsoft::WRL::ComPtr<ID3D12Resource> UploadTextureData(ID3D12Resource* texture, const DirectX::ScratchImage& mipImages, ID3D12Device* device, ID3D12GraphicsCommandList* commandList)
 {
+    // texture が nullptr なら何もしない
+    if (!texture) return nullptr;
+
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
     DirectX::PrepareUpload(device, mipImages.GetImages(), mipImages.GetImageCount(), mipImages.GetMetadata(), subresources);
     uint64_t intermediateSize = GetRequiredIntermediateSize(texture, 0, static_cast<UINT>(subresources.size()));
@@ -91,15 +101,38 @@ Microsoft::WRL::ComPtr<ID3D12Resource> UploadTextureData(ID3D12Resource* texture
     return intermediate;
 }
 
+// ★★★ ここを大幅修正 ★★★
 DirectX::ScratchImage LoadTexture(const std::string& filePath)
 {
     DirectX::ScratchImage image{};
+
+    // パスが存在するかチェック
+    if (!std::filesystem::exists(filePath)) {
+        std::string msg = "[D3D12Util] File not found: " + filePath + "\n";
+        OutputDebugStringA(msg.c_str());
+        return image; // 空のイメージを返す
+    }
+
     std::wstring filePathW = ConvertString(filePath);
     HRESULT hr = DirectX::LoadFromWICFile(filePathW.c_str(), DirectX::WIC_FLAGS_FORCE_SRGB, nullptr, image);
-    assert(SUCCEEDED(hr));
+
+    if (FAILED(hr)) {
+        std::string msg = "[D3D12Util] LoadFromWICFile Failed: " + filePath + "\n";
+        OutputDebugStringA(msg.c_str());
+        return image;
+    }
+
     DirectX::ScratchImage mipImages{};
     hr = DirectX::GenerateMipMaps(image.GetImages(), image.GetImageCount(), image.GetMetadata(), DirectX::TEX_FILTER_SRGB, 0, mipImages);
-    assert(SUCCEEDED(hr));
+
+    // ★ 修正点: ミップマップ生成に失敗した場合（1x1画像など）は、元の画像をそのまま返す
+    if (FAILED(hr)) {
+        std::string msg = "[D3D12Util] GenerateMipMaps Failed (Using original image): " + filePath + "\n";
+        OutputDebugStringA(msg.c_str());
+        // ミップマップ生成に失敗しても元の画像はロードできているので、それを返す
+        return image;
+    }
+
     return mipImages;
 }
 
