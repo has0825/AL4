@@ -1,4 +1,3 @@
-// Camera.h
 #pragma once
 #include "MathTypes.h" // Vector3, Matrix4x4
 #include "DataTypes.h" // Transform
@@ -6,7 +5,15 @@
 class Camera {
 public:
     void Initialize();
+
+    // 行列を更新する関数 (main.cppに合わせて Update という名前に対応させる)
+    void Update();
+
+    // 内部的な行列計算関数
     void UpdateMatrix();
+
+    // 座標をセットする関数 (main.cppでの呼び出しに対応)
+    void SetTranslate(const Vector3& translate);
 
     // 行列を取得
     const Matrix4x4& GetViewMatrix() const { return matView_; }
@@ -16,10 +23,6 @@ public:
     // Transformを取得 (GPU転送用)
     Transform& GetTransform() { return transform_; }
     const Transform& GetTransform() const { return transform_; }
-
-    // 🔽🔽🔽 ImGui_Draw の宣言を削除 🔽🔽🔽
-    // void ImGui_Draw();
-    // 🔼🔼🔼 ************************ 🔼🔼🔼
 
 private:
     Transform transform_{ {1.0f, 1.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -10.0f} };

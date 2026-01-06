@@ -19,10 +19,9 @@
 #include <strsafe.h>
 #include "externals/DirectXTex/DirectXTex.h"
 #include "externals/DirectXTex/d3dx12.h"
-#include "externals/imgui/imgui.h"
-#include "externals/imgui/imgui_impl_dx12.h"
-#include "externals/imgui/imgui_impl_win32.h"
 #include <xaudio2.h>
+
+// ライブラリリンク
 #pragma comment(lib, "xaudio2.lib")
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -97,6 +96,34 @@ struct D3DResourceLeakChecker {
     }
 };
 
+// --- セーブ・ロード機能 ---
+const std::string kSaveFilePath = "save_data.txt";
+
+void SaveProgress(const std::string& mapName, const Vector3& respawnPos) {
+    std::ofstream ofs(kSaveFilePath);
+    if (ofs) {
+        ofs << mapName << std::endl;
+        ofs << respawnPos.x << " " << respawnPos.y << " " << respawnPos.z << std::endl;
+    }
+}
+
+bool LoadProgress(std::string& outMapName, Vector3& outRespawnPos) {
+    std::ifstream ifs(kSaveFilePath);
+    if (ifs) {
+        if (std::getline(ifs, outMapName)) {
+            ifs >> outRespawnPos.x >> outRespawnPos.y >> outRespawnPos.z;
+            return true;
+        }
+    }
+    return false;
+}
+
+void DeleteSave() {
+    if (std::filesystem::exists(kSaveFilePath)) {
+        std::filesystem::remove(kSaveFilePath);
+    }
+}
+
 // --- シーン定義 ---
 enum class GameScene {
     Title,      // タイトル画面
@@ -138,6 +165,9 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Model* titleModel = nullptr;
     Model* gameOverModel = nullptr;
     Model* gameClearModel = nullptr;
+
+    // スカイドーム用モデルポインタ
+    Model* skydomeModel = nullptr;
 
     // 中間リソース保持リスト
     std::vector<Microsoft::WRL::ComPtr<ID3D12Resource>> intermediateResources;
@@ -192,7 +222,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Microsoft::WRL::ComPtr<ID3D12Resource> blockTextureResource = LoadAndCreateTextureSRV("Resources/block/block.png", 3);
     D3D12_GPU_DESCRIPTOR_HANDLE blockTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 3);
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> cubeTextureResource = LoadAndCreateTextureSRV("Resources/cube/cube.png", 4);
+    Microsoft::WRL::ComPtr<ID3D12Resource> cubeTextureResource = LoadAndCreateTextureSRV("Resources/cube/cube.jpg", 4);
     D3D12_GPU_DESCRIPTOR_HANDLE cubeTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 4);
 
     Microsoft::WRL::ComPtr<ID3D12Resource> titleTextureResource = LoadAndCreateTextureSRV("Resources/Title/Title.png", 5);
@@ -204,6 +234,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Microsoft::WRL::ComPtr<ID3D12Resource> gameClearTextureResource = LoadAndCreateTextureSRV("Resources/Clear/Clear.png", 7);
     D3D12_GPU_DESCRIPTOR_HANDLE gameClearTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 7);
 
+    // スカイドーム用テクスチャ (Index: 8)
+    Microsoft::WRL::ComPtr<ID3D12Resource> skydomeTextureResource = LoadAndCreateTextureSRV("Resources/skydome/sky_sphere.png", 8);
+    D3D12_GPU_DESCRIPTOR_HANDLE skydomeTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 8);
+
 
     // =========================================================================
     // シーン用モデル生成
@@ -212,7 +246,6 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     // Title Model
     titleModel = Model::Create("Resources/Title", "Title.obj", device);
     if (titleModel) {
-        // ★ Y=11.0f (上の方), Z=30.0f
         titleModel->transform.translate = { 9.2f, 11.0f, 30.0f };
         titleModel->transform.scale = { 1.0f, 1.0f, 1.0f };
     }
@@ -231,8 +264,17 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         gameClearModel->transform.scale = { 1.0f, 1.0f, 1.0f };
     }
 
+    // スカイドームモデル生成
+    skydomeModel = Model::Create("Resources/skydome", "skydome.obj", device);
+    if (skydomeModel) {
+        // ★変更: 背景全体を覆うようにさらに大きくする (5000倍)
+        skydomeModel->transform.scale = { 5000.0f, 5000.0f, 5000.0f };
+        skydomeModel->transform.translate = { 0.0f, 0.0f, 0.0f };
+        skydomeModel->transform.rotate = { 0.0f, 0.0f, 0.0f };
+    }
 
-    // --- ライト・カメラ・ImGui (常駐) ---
+
+    // --- ライト・カメラ (常駐) ---
     Microsoft::WRL::ComPtr<ID3D12Resource> directionalLightResource = CreateBufferResource(device, sizeof(DirectionalLight));
     DirectionalLight* directionalLightData = nullptr;
     directionalLightResource->Map(0, nullptr, reinterpret_cast<void**>(&directionalLightData));
@@ -247,20 +289,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     CameraForGpu* cameraForGpuData = nullptr;
     cameraForGpuResource->Map(0, nullptr, reinterpret_cast<void**>(&cameraForGpuData));
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGui::StyleColorsClassic();
-    ImGui_ImplWin32_Init(winApp->GetHwnd());
-    ImGui_ImplDX12_Init(device, dxCommon->GetBackBufferCount(), dxCommon->GetRtvDesc().Format,
-        srvDescriptorHeap.Get(),
-        srvDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
-        srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
-
+    // ImGui 初期化削除
 
     // --- シーン管理用変数 ---
     GameScene currentScene = GameScene::Title;
     bool isGameInitialized = false;
     bool isLoadingNextMap = false;
+
+    // ★ 現在のマップ名とリスポーン地点（セーブデータ代わり）
+    // ゲーム起動中だけ保持される
+    std::string currentMapFilePath = "Resources/map.csv";
+    Vector3 currentRespawnPos = { 0.0f, 0.0f, 0.0f }; // 0,0,0 ならデフォルト位置
+
+    // 次のマップ移動用
+    std::string nextMapFilePath = "";
+    Vector3 nextRespawnPos = { 0.0f, 0.0f, 0.0f };
 
     // --- ゲームリソース解放用ラムダ ---
     auto cleanupGameResources = [&]() {
@@ -279,41 +322,55 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         Input::GetInstance()->Update();
         Input* input = Input::GetInstance();
 
-        // ImGuiフレーム開始
-        ImGui_ImplDX12_NewFrame();
-        ImGui_ImplWin32_NewFrame();
-        ImGui::NewFrame();
+        // ImGui NewFrame 削除
 
         // --- シーン処理 (ロジック更新のみ) ---
         switch (currentScene) {
         case GameScene::Title:
             // ★ Spaceキーで遷移
-            if (input->IsKeyPressed(VK_SPACE)) currentScene = GameScene::GamePlay;
-            ImGui::Begin("Debug: Title"); ImGui::Text("Press SPACE to Start"); ImGui::End();
+            if (input->IsKeyPressed(VK_SPACE)) {
+                // スタート時は必ず map.csv から（クリア後のリセットなども考慮）
+                if (currentMapFilePath.empty()) {
+                    currentMapFilePath = "Resources/map.csv";
+                    currentRespawnPos = { 0.0f, 0.0f, 0.0f };
+                }
+                currentScene = GameScene::GamePlay;
+            }
             break;
 
         case GameScene::GamePlay:
             if (!isGameInitialized) {
-                // ... (初期化処理は変更なし) ...
+                // ... (初期化処理) ...
                 mapChip = new MapChip();
                 playerModel = Model::Create("Resources/player", "player.obj", device);
                 player = new Player();
-                mapChip->Load("Resources/map.csv", device);
+
+                // ★ 記憶しているマップを読み込む
+                mapChip->Load(currentMapFilePath, device);
+
                 player->Initialize(playerModel, mapChip, device);
 
-                size_t mapHeight = 15;
-                auto csvYToWorldY = [&](int csvY) { return (static_cast<float>(mapHeight - 1) - static_cast<float>(csvY)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f); };
-                float stopMarginNormal = MapChip::kBlockSize * 1.0f;
-                float stopMarginShort = MapChip::kBlockSize * 0.2f;
+                // ★ リスポーン地点が設定されていればそこに移動（Map2, Map3のリスタート用）
+                if (currentRespawnPos.x != 0.0f || currentRespawnPos.y != 0.0f) {
+                    player->SetPosition(currentRespawnPos);
+                }
 
-                traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(4), Trap::AttackSide::FromLeft, stopMarginNormal);
-                traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(5), Trap::AttackSide::FromLeft, stopMarginNormal);
-                traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(6), Trap::AttackSide::FromLeft, stopMarginNormal);
-                traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(8), Trap::AttackSide::FromRight, stopMarginNormal);
-                traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(9), Trap::AttackSide::FromRight, stopMarginNormal);
-                traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(10), Trap::AttackSide::FromRight, stopMarginNormal);
-                traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(12), Trap::AttackSide::FromRight, stopMarginShort);
-                traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(13), Trap::AttackSide::FromRight, stopMarginShort);
+                // map.csv の場合のみ手動トラップ配置 (元のコード仕様)
+                if (currentMapFilePath == "Resources/map.csv") {
+                    size_t mapHeight = 15;
+                    auto csvYToWorldY = [&](int csvY) { return (static_cast<float>(mapHeight - 1) - static_cast<float>(csvY)) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f); };
+                    float stopMarginNormal = MapChip::kBlockSize * 1.0f;
+                    float stopMarginShort = MapChip::kBlockSize * 0.2f;
+
+                    traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(4), Trap::AttackSide::FromLeft, stopMarginNormal);
+                    traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(5), Trap::AttackSide::FromLeft, stopMarginNormal);
+                    traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(6), Trap::AttackSide::FromLeft, stopMarginNormal);
+                    traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(8), Trap::AttackSide::FromRight, stopMarginNormal);
+                    traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(9), Trap::AttackSide::FromRight, stopMarginNormal);
+                    traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(10), Trap::AttackSide::FromRight, stopMarginNormal);
+                    traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(12), Trap::AttackSide::FromRight, stopMarginShort);
+                    traps_.push_back(new Trap()); traps_.back()->Initialize(device, csvYToWorldY(13), Trap::AttackSide::FromRight, stopMarginShort);
+                }
 
                 const auto& dynamicBlocks = mapChip->GetDynamicBlocks();
                 for (const auto& data : dynamicBlocks) {
@@ -334,30 +391,80 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
 
             if (!isLoadingNextMap) {
-                if (player->IsAlive()) player->Update();
-                else currentScene = GameScene::GameOver;
+                if (player->IsAlive()) {
+                    player->Update();
+
+                    // ★追加: 落下判定 (Y座標が-10.0f以下ならゲームオーバー)
+                    if (player->GetPosition().y < -10.0f) {
+                        currentScene = GameScene::GameOver;
+                    }
+                } else {
+                    currentScene = GameScene::GameOver;
+                }
 
                 for (Trap* trap : traps_) trap->Update(player);
                 for (FallingBlock* block : fallingBlocks_) block->Update(player, mapChip);
 
-                if (player->IsExiting()) isLoadingNextMap = true;
-                if (player->IsAlive() && mapChip->HasGoal() && mapChip->CheckGoalCollision(player->GetPosition(), player->GetHalfSize())) {
-                    currentScene = GameScene::GameClear;
+                // --- マップ移動・クリア判定 ---
+
+                // 1. map.csv -> map2.csv (IsExitingで判定)
+                if (currentMapFilePath == "Resources/map.csv") {
+                    if (player->IsExiting()) {
+                        isLoadingNextMap = true;
+                        nextMapFilePath = "Resources/map2.csv";
+                        // map2 初期位置 (元のコード通り)
+                        size_t map2Height = 15;
+                        float spawnY = (static_cast<float>(map2Height - 1) - 14.0f) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
+                        float spawnX = (MapChip::kBlockSize / 2.0f);
+                        nextRespawnPos = { spawnX, spawnY, 0.0f };
+                    }
+                }
+                // 2. ★ map2.csv -> map3.csv (左上到達判定)
+                else if (currentMapFilePath == "Resources/map2.csv") {
+                    Vector3 pPos = player->GetPosition();
+                    // map2の高さ (MapChipから取得)
+                    float mapTopY = static_cast<float>(mapChip->GetRowCount()) * MapChip::kBlockSize;
+
+                    // 左上エリア判定 (X < 2ブロック分, Y > 上から2ブロック分)
+                    if (pPos.x < MapChip::kBlockSize * 2.0f && pPos.y > mapTopY - (MapChip::kBlockSize * 2.0f)) {
+                        isLoadingNextMap = true;
+                        nextMapFilePath = "Resources/map3.csv";
+
+                        // ★ map3 初期位置: 3.5f (ご指定通り2.5fからさらに右へ+1)
+                        float spawnX = MapChip::kBlockSize * 3.5f;
+                        float spawnY = MapChip::kBlockSize * 1.5f; // 下から2段目
+                        nextRespawnPos = { spawnX, spawnY, 0.0f };
+                    }
+                }
+                // 3. ★ map3.csv -> ゲームクリア (ゴール判定)
+                else if (currentMapFilePath == "Resources/map3.csv") {
+                    if (player->IsAlive() && mapChip->HasGoal() && mapChip->CheckGoalCollision(player->GetPosition(), player->GetHalfSize())) {
+                        currentScene = GameScene::GameClear;
+                        // セーブデータをリセット
+                        currentMapFilePath = "Resources/map.csv";
+                        currentRespawnPos = { 0.0f, 0.0f, 0.0f };
+                    }
                 }
             }
-            player->ImGui_Draw();
+            // player->ImGui_Draw(); // 削除
 
             if (isLoadingNextMap) {
+                // リソース解放
                 for (Trap* trap : traps_) delete trap; traps_.clear();
                 for (FallingBlock* block : fallingBlocks_) delete block; fallingBlocks_.clear();
                 delete goalModel_; goalModel_ = nullptr;
 
-                mapChip->Load("Resources/map2.csv", device);
-                size_t map2Height = 15;
-                float spawnY = (static_cast<float>(map2Height - 1) - 14.0f) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
-                float spawnX = (MapChip::kBlockSize / 2.0f);
-                player->SetPosition({ spawnX, spawnY, 0.0f });
+                // ★ セーブデータを更新 (インゲームセーブ)
+                currentMapFilePath = nextMapFilePath;
+                currentRespawnPos = nextRespawnPos;
 
+                // 新しいマップをロード
+                mapChip->Load(currentMapFilePath, device);
+
+                // プレイヤー位置更新
+                player->SetPosition(currentRespawnPos);
+
+                // オブジェクト再配置
                 const auto& dynamicBlocks2 = mapChip->GetDynamicBlocks();
                 for (const auto& data : dynamicBlocks2) {
                     FallingBlock* newBlock = new FallingBlock();
@@ -368,28 +475,39 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
                     if (goalModel_) {
                         goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
+                        goalModel_->transform.rotate = { 0.0f, 0.0f, 0.0f };
                         goalModel_->transform.translate = mapChip->GetGoalPosition();
                     }
                 }
+
                 isLoadingNextMap = false;
+                // isGameInitialized は true のまま (リソース再利用)
             }
             break;
 
         case GameScene::GameOver:
-            // ★ Spaceキーで遷移
-            if (input->IsKeyPressed(VK_SPACE)) { cleanupGameResources(); currentScene = GameScene::Title; }
-            ImGui::Begin("Debug: GameOver"); ImGui::Text("Press SPACE to Title"); ImGui::End();
+            // ★ Spaceキーでリスタート
+            if (input->IsKeyPressed(VK_SPACE)) {
+                cleanupGameResources(); // リソースを全て解放して isGameInitialized = false にする
+                currentScene = GameScene::GamePlay; // GamePlayに戻る
+
+                // ここで GamePlay に戻ると、isGameInitialized == false なので初期化処理が走る。
+                // その際、currentMapFilePath と currentRespawnPos は
+                // 直前の状態（Map3ならMap3の初期位置）を保持しているので、そこから再開される。
+            }
             break;
 
         case GameScene::GameClear:
-            // ★ Spaceキーで遷移
-            if (input->IsKeyPressed(VK_SPACE)) { cleanupGameResources(); currentScene = GameScene::Title; }
-            ImGui::Begin("Debug: GameClear"); ImGui::Text("Press SPACE to Title"); ImGui::End();
+            // ★ Spaceキーでタイトルへ
+            if (input->IsKeyPressed(VK_SPACE)) {
+                cleanupGameResources();
+                currentScene = GameScene::Title;
+                // セーブデータは GamePlay ループ内のクリア判定時にリセット済み
+            }
             break;
         }
 
-        // --- ImGuiの描画コマンド生成 (まだ描画しない) ---
-        ImGui::Render();
+        // ImGui Render 削除
 
         // --- 描画開始 ---
         // 1. 画面クリア
@@ -412,6 +530,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         commandList->SetDescriptorHeaps(1, descriptorHeaps);
 
         // 5. ゲームオブジェクトの描画
+
+        // ★変更: スカイドーム描画 (全シーン共通で、一番最初に描画して背景にする)
+        if (skydomeModel && skydomeTextureResource) {
+            skydomeModel->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), skydomeTextureSrvHandleGPU);
+        }
+
         if (currentScene == GameScene::Title) {
             // タイトルモデルの描画
             if (titleModel && titleTextureResource) {
@@ -428,6 +552,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 gameClearModel->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), gameClearTextureSrvHandleGPU);
             }
         } else if (currentScene == GameScene::GamePlay && isGameInitialized) {
+            // スカイドームは上で描画済みなのでここでは不要
             if (blockTextureResource) mapChip->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), blockTextureSrvHandleGPU);
             if (playerTextureResource) player->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), playerTextureSrvHandleGPU);
             if (cubeTextureResource) {
@@ -439,23 +564,19 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
         }
 
-        // 6. ImGuiの描画
-        ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), commandList);
+        // 6. ImGuiの描画 削除
 
         // 7. 画面フリップ
         dxCommon->PostDraw();
 
     } // End Loop
 
-    //ImGui_ImplDX12_Shutdown();
-    //ImGui_ImplWin32_Shutdown();
-    //ImGui::DestroyContext();
-
     if (isGameInitialized) cleanupGameResources();
 
     // 中間リソースはComPtrのデストラクタで自動解放されます
     // シーン用モデルの削除
     delete titleModel; delete gameOverModel; delete gameClearModel;
+    delete skydomeModel; // スカイドーム解放
     delete graphicsPipeline; delete camera;
 
     dxCommon->Finalize();

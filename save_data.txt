@@ -1,0 +1,2 @@
+Resources/map3.csv
+1.05 1.05 0

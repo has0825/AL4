@@ -16,8 +16,6 @@ MapChip::~MapChip() {
         delete model;
     }
     models_.clear();
-
-    // ★ MapChip.h の変更に合わせて goalModel_ の delete を削除
 }
 
 void MapChip::Initialize() {
@@ -55,7 +53,7 @@ void MapChip::Load(const std::string& filePath, ID3D12Device* device) {
         }
         data_.push_back(row);
     }
-    file.close(); // ★ data_ 確定
+    file.close();
 
     // 読み込んだデータに基づいてモデルを生成・配置する
     Transform transform;
@@ -72,13 +70,14 @@ void MapChip::Load(const std::string& filePath, ID3D12Device* device) {
             float worldX = static_cast<float>(x) * kBlockSize;
             Vector3 pos = { worldX + kBlockSize / 2.0f, worldY + kBlockSize / 2.0f, 0.0f };
 
-            if (cellValue == 1) { // 1なら静的ブロックのモデルを生成
+            if (cellValue == 1) {
+                // 1なら静的ブロックのモデルを生成
                 Model* model = Model::Create("Resources/block", "block.obj", device);
                 transform.translate = pos;
                 model->transform = transform;
                 models_.push_back(model);
-            } else if (cellValue == 3 || cellValue == 4) {
-                // 3(落ちる) 4(スパイク) は dynamicBlocks_ に追加
+            } else if (cellValue == 3 || cellValue == 4 || cellValue == 6 || cellValue == 7 || cellValue == 8) {
+                // 3, 4, 6, 7, 8 は動的ブロックとして登録
                 dynamicBlocks_.push_back({ pos, cellValue });
             } else if (cellValue == 5) {
                 // 5 (ゴール) の位置を記録
@@ -87,8 +86,6 @@ void MapChip::Load(const std::string& filePath, ID3D12Device* device) {
             }
         }
     }
-
-    // ★ 5 (ゴール) のモデル生成をここから削除
 }
 
 void MapChip::Draw(
@@ -97,13 +94,10 @@ void MapChip::Draw(
     D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress,
     D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {
 
-    // 1. 静的なブロック (1) を描画
-    // (main.cpp から blockTextureSrvHandleGPU が渡される)
+    // 静的なブロック (1) を描画
     for (Model* model : models_) {
         model->Draw(commandList, viewProjectionMatrix, lightGpuAddress, textureSrvHandle);
     }
-
-    // ★ 2. ゴール (5) の描画をここから削除
 }
 
 bool MapChip::CheckCollision(const Vector3& worldPos) {
@@ -138,13 +132,13 @@ bool MapChip::CheckGoalCollision(const Vector3& playerPos, float playerHalfSize)
     float pLeft = playerPos.x - playerHalfSize;
     float pRight = playerPos.x + playerHalfSize;
     float pTop = playerPos.y + playerHalfSize;
-    float pBottom = playerPos.y - playerHalfSize; // ★ 修正済み
+    float pBottom = playerPos.y - playerHalfSize;
 
     // ゴールのAABB
     float halfSize = kBlockSize / 2.0f;
     float gLeft = goalPos_.x - halfSize;
     float gRight = goalPos_.x + halfSize;
-    float gTop = goalPos_.y + halfSize; // ★ 修正済み
+    float gTop = goalPos_.y + halfSize;
     float gBottom = goalPos_.y - halfSize;
 
     // AABB 衝突判定
@@ -155,7 +149,6 @@ bool MapChip::CheckGoalCollision(const Vector3& playerPos, float playerHalfSize)
     return true; // 衝突している
 }
 
-// --- ▼▼▼ ★★★ 修正・追加 (ここから) ★★★ ---
 void MapChip::GetGridCoordinates(const Vector3& worldPos, int& outX, int& outMapY) const {
     if (data_.empty()) {
         outX = -1;
@@ -183,4 +176,3 @@ void MapChip::SetGridCell(int x, int mapY, int value) {
     // 値を上書き
     data_[mapY][x] = value;
 }
-// --- ▲▲▲ ★★★ 修正・追加 (ここまで) ★★★ ---
