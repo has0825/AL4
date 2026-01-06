@@ -43,7 +43,17 @@
 #include "Trap.h"
 #include "FallingBlock.h"
 
-// --- ヘルパー関数群 ---
+// =========================================================================
+// ▼ ヘルパー関数群 (Log関数などを先に定義するために上に移動)
+// =========================================================================
+
+// デバッグ出力用関数
+void Log(std::ostream& os, const std::string& message) {
+    os << message << std::endl;
+    OutputDebugStringA(message.c_str());
+}
+
+// エラーダンプ出力用
 static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception) {
     SYSTEMTIME time;
     GetLocalTime(&time);
@@ -60,11 +70,6 @@ static LONG WINAPI ExportDump(EXCEPTION_POINTERS* exception) {
     MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), dumpFileHandle,
         MiniDumpNormal, &minidumpInformation, nullptr, nullptr);
     return EXCEPTION_EXECUTE_HANDLER;
-}
-
-void Log(std::ostream& os, const std::string& message) {
-    os << message << std::endl;
-    OutputDebugStringA(message.c_str());
 }
 
 std::wstring ConvertString(const std::string& str) {
@@ -95,6 +100,71 @@ struct D3DResourceLeakChecker {
         }
     }
 };
+
+// =========================================================================
+// ▼ 音声関連 (Log関数のあとに配置することでエラーを解消)
+// =========================================================================
+
+struct SoundData {
+    WAVEFORMATEX wfex;
+    std::vector<BYTE> pBuffer;
+    unsigned int bufferSize;
+};
+
+// WAVファイル読み込み関数
+SoundData LoadWave(const std::string& filename) {
+    SoundData soundData = {};
+    std::ifstream file(filename, std::ios::binary);
+
+    if (!file.is_open()) {
+        Log(std::cout, "[ERROR] Sound file not found: " + filename);
+        return soundData;
+    }
+
+    // RIFFヘッダ読み込み
+    struct RiffHeader {
+        char chunkId[4]; // "RIFF"
+        uint32_t chunkSize;
+        char format[4];  // "WAVE"
+    } riffHeader;
+
+    file.read(reinterpret_cast<char*>(&riffHeader), sizeof(RiffHeader));
+    if (strncmp(riffHeader.chunkId, "RIFF", 4) != 0 || strncmp(riffHeader.format, "WAVE", 4) != 0) {
+        Log(std::cout, "[ERROR] Invalid WAV file: " + filename);
+        return soundData;
+    }
+
+    // チャンク探索ループ
+    struct ChunkHeader {
+        char id[4];
+        uint32_t size;
+    } chunkHeader;
+
+    while (file.read(reinterpret_cast<char*>(&chunkHeader), sizeof(ChunkHeader))) {
+        if (strncmp(chunkHeader.id, "fmt ", 4) == 0) {
+            // フォーマットチャンク
+            file.read(reinterpret_cast<char*>(&soundData.wfex), sizeof(WAVEFORMATEX) < chunkHeader.size ? sizeof(WAVEFORMATEX) : chunkHeader.size);
+            // 読み残しがあればスキップ
+            if (chunkHeader.size > sizeof(WAVEFORMATEX)) {
+                file.seekg(chunkHeader.size - sizeof(WAVEFORMATEX), std::ios::cur);
+            }
+        }
+        else if (strncmp(chunkHeader.id, "data", 4) == 0) {
+            // データチャンク
+            soundData.pBuffer.resize(chunkHeader.size);
+            file.read(reinterpret_cast<char*>(soundData.pBuffer.data()), chunkHeader.size);
+            soundData.bufferSize = chunkHeader.size;
+            break; // データが読み込めたら終了
+        }
+        else {
+            // 未知のチャンクはスキップ
+            file.seekg(chunkHeader.size, std::ios::cur);
+        }
+    }
+
+    Log(std::cout, "[OK] Sound Loaded: " + filename);
+    return soundData;
+}
 
 // --- セーブ・ロード機能 ---
 const std::string kSaveFilePath = "save_data.txt";
@@ -132,6 +202,10 @@ enum class GameScene {
     GameClear   // ゲームクリア
 };
 
+// =========================================================================
+// ▼ メイン関数
+// =========================================================================
+
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     D3DResourceLeakChecker leakChecker;
     WinApp* winApp = WinApp::GetInstance();
@@ -147,6 +221,27 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     IXAudio2MasteringVoice* masterVoice;
     XAudio2Create(&xAudio2, 0, XAUDIO2_DEFAULT_PROCESSOR);
     xAudio2->CreateMasteringVoice(&masterVoice);
+
+    // ★追加: BGMの読み込みと再生準備
+    // 注意: music.mp3 を music.wav に変換して Resources フォルダに入れてください
+    SoundData bgmData = LoadWave("Resources/music.wav");
+    IXAudio2SourceVoice* bgmSourceVoice = nullptr;
+
+    if (bgmData.bufferSize > 0) {
+        // ソースボイスの生成
+        HRESULT hr = xAudio2->CreateSourceVoice(&bgmSourceVoice, &bgmData.wfex);
+        if (SUCCEEDED(hr)) {
+            XAUDIO2_BUFFER buf = {};
+            buf.pAudioData = bgmData.pBuffer.data(); // 音声データへのポインタ
+            buf.AudioBytes = bgmData.bufferSize;     // データサイズ
+            buf.Flags = XAUDIO2_END_OF_STREAM;
+            buf.LoopCount = XAUDIO2_LOOP_INFINITE;   // ★無限ループ設定
+
+            // バッファを登録して再生開始
+            bgmSourceVoice->SubmitSourceBuffer(&buf);
+            bgmSourceVoice->Start();
+        }
+    }
 
     ID3D12Device* device = dxCommon->GetDevice();
     GraphicsPipeline* graphicsPipeline = new GraphicsPipeline();
@@ -570,6 +665,12 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         dxCommon->PostDraw();
 
     } // End Loop
+
+    // --- ★追加: 音声リソースの解放 ---
+    if (bgmSourceVoice) {
+        bgmSourceVoice->DestroyVoice();
+    }
+    // bgmData.pBuffer は std::vector なので自動的にメモリ解放されます
 
     if (isGameInitialized) cleanupGameResources();
 
