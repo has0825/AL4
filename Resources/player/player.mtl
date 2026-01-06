@@ -1,7 +1,7 @@
-# Blender 4.4.1 MTL File: '敵.blend'
+# Blender 4.4.1 MTL File: 'None'
 # www.blender.org
 
-newmtl マテリアル
+newmtl マテリアル.006
 Ns 250.000000
 Ka 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
@@ -9,9 +9,9 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd C:/Users/k024g/Desktop/player.png
+map_Kd AL4/GE3-sin3/GE3-sin3/Resources/player/player.png
 
-newmtl マテリアル.001
+newmtl マテリアル.007
 Ns 250.000000
 Ka 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
@@ -19,9 +19,9 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd C:/Users/k024g/Desktop/player.png
+map_Kd AL4/GE3-sin3/GE3-sin3/Resources/player/player.png
 
-newmtl マテリアル.002
+newmtl マテリアル.008
 Ns 250.000000
 Ka 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
@@ -29,9 +29,9 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd C:/Users/k024g/Desktop/player.png
+map_Kd AL4/GE3-sin3/GE3-sin3/Resources/player/player.png
 
-newmtl マテリアル.003
+newmtl マテリアル.009
 Ns 250.000000
 Ka 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
@@ -39,9 +39,9 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd C:/Users/k024g/Desktop/player.png
+map_Kd AL4/GE3-sin3/GE3-sin3/Resources/player/player.png
 
-newmtl マテリアル.004
+newmtl マテリアル.010
 Ns 250.000000
 Ka 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
@@ -49,9 +49,9 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd C:/Users/k024g/Desktop/player.png
+map_Kd AL4/GE3-sin3/GE3-sin3/Resources/player/player.png
 
-newmtl マテリアル.005
+newmtl マテリアル.011
 Ns 250.000000
 Ka 1.000000 1.000000 1.000000
 Ks 0.500000 0.500000 0.500000
@@ -59,4 +59,4 @@ Ke 0.000000 0.000000 0.000000
 Ni 1.500000
 d 1.000000
 illum 2
-map_Kd C:/Users/k024g/Desktop/player.png
+map_Kd AL4/GE3-sin3/GE3-sin3/Resources/player/player.png
