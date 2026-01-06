@@ -1,9 +1,4 @@
-﻿// ========================================================================
-//
-// main.cpp (シーン遷移: Spaceキーに変更版)
-//
-// ========================================================================
-#define _USE_MATH_DEFINES
+﻿#define _USE_MATH_DEFINES
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -197,7 +192,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Microsoft::WRL::ComPtr<ID3D12Resource> blockTextureResource = LoadAndCreateTextureSRV("Resources/block/block.png", 3);
     D3D12_GPU_DESCRIPTOR_HANDLE blockTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 3);
 
-    Microsoft::WRL::ComPtr<ID3D12Resource> cubeTextureResource = LoadAndCreateTextureSRV("Resources/cube/cube.jpg", 4);
+    Microsoft::WRL::ComPtr<ID3D12Resource> cubeTextureResource = LoadAndCreateTextureSRV("Resources/cube/cube.png", 4);
     D3D12_GPU_DESCRIPTOR_HANDLE cubeTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 4);
 
     Microsoft::WRL::ComPtr<ID3D12Resource> titleTextureResource = LoadAndCreateTextureSRV("Resources/Title/Title.png", 5);
