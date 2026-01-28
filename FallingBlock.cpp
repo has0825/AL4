@@ -7,8 +7,10 @@ FallingBlock::~FallingBlock() {
 }
 
 void FallingBlock::Initialize(ID3D12Device* device, const Vector3& initialPos, BlockType type) {
-    // モデル読み込み
-    model_ = Model::Create("Resources/block", "block.obj", device);
+    // ★ 変更: block.obj ではなく Trap.obj を読み込む
+    // "Resources/Trap" フォルダ内にあると仮定しています
+    model_ = Model::Create("Resources/Trap", "Trap.obj", device);
+
     initialPos_ = initialPos;
     type_ = type;
 
