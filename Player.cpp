@@ -17,6 +17,7 @@ void Player::Initialize(Model* model, MapChip* mapChip, ID3D12Device* device) {
     initialPosition_ = { 2.0f, 9.0f, 0.0f };
     SetPosition(initialPosition_);
     isAlive_ = true;
+    jumpCount_ = 0; // ★追加: ジャンプ回数初期化
 
     // 弾のモデル生成
     bulletModel_ = Model::Create("Resources/cube", "cube.obj", device);
@@ -54,7 +55,7 @@ void Player::Update() {
     if (wallJumpLockTimer_ > 0.0f) wallJumpLockTimer_ -= 1.0f / 60.0f;
 
     // ▼▼▼ ローリング開始処理 (Shiftキー) ▼▼▼
-    if (input->IsKeyPressed(VK_SHIFT) && !isRolling_ && rollCooldown_ <= 0.0f) {
+    if (input->IsKeyPressed('L') && !isRolling_ && rollCooldown_ <= 0.0f) {
         isRolling_ = true;
         rollTimer_ = kRollDuration;
         rollCooldown_ = kRollCooldownTime;
@@ -165,7 +166,7 @@ void Player::Update() {
     }
 
     // ==========================================
-    // 物理挙動とコリジョン (X軸)
+    // 物理挙動とコリジョン
     // ==========================================
     position.x += velocity_.x;
     playerLeft = position.x - kPlayerHalfSize;
@@ -173,7 +174,7 @@ void Player::Update() {
     playerTop = position.y + kPlayerHalfSize;
     playerBottom = position.y - kPlayerHalfSize;
 
-    // 少し内側で判定しないと、壁ずり落ち中に地面判定が暴れることがあるため微調整
+    
     float checkY_Top = playerTop - 0.05f;
     float checkY_Bottom = playerBottom + 0.05f;
 
@@ -222,6 +223,7 @@ void Player::Update() {
             velocity_.y = kJumpPower;
             jumpBufferTimer_ = 0.0f;
             onGround_ = false;
+            jumpCount_ = 1;
         } else if (wallTouch_ == WallTouchSide::Left) {
             // 左壁キック (右上に飛ぶ)
             velocity_.y = kWallJumpPowerY;
@@ -229,9 +231,8 @@ void Player::Update() {
             jumpBufferTimer_ = 0.0f;
             wallTouch_ = WallTouchSide::None;
             lrDirection_ = 1.0f;
-
-            // ★壁ジャンプ直後は入力をロックして飛距離を稼ぐ
             wallJumpLockTimer_ = 0.3f;
+            jumpCount_ = 1;
         } else if (wallTouch_ == WallTouchSide::Right) {
             // 右壁キック (左上に飛ぶ)
             velocity_.y = kWallJumpPowerY;
@@ -239,9 +240,16 @@ void Player::Update() {
             jumpBufferTimer_ = 0.0f;
             wallTouch_ = WallTouchSide::None;
             lrDirection_ = -1.0f;
-
-            // ★壁ジャンプ直後は入力をロック
             wallJumpLockTimer_ = 0.3f;
+            jumpCount_ = 1;
+        }
+        else if (jumpCount_ < kMaxJumps) {
+            // 空中ジャンプ (回数が最大未満なら実行)
+            velocity_.y = kJumpPower; // 必要なら空中専用のジャンプ力に変えてもOK
+            jumpBufferTimer_ = 0.0f;
+            jumpCount_++; // ジャンプ回数を加算
+
+            // 任意: 二段ジャンプのエフェクトや音をここで再生
         }
     }
 
@@ -280,6 +288,7 @@ void Player::Reset() {
     transform_.rotate = { 0.0f, 0.0f, 0.0f };
     for (PlayerBullet* bullet : bullets_) delete bullet;
     bullets_.clear();
+    jumpCount_ = 0;
 }
 
 void Player::Draw(ID3D12GraphicsCommandList* commandList, const Matrix4x4& viewProjectionMatrix, D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress, D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {

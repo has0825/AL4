@@ -53,6 +53,8 @@ private:
     // ジャンプ・壁ジャンプ関連
     float jumpBufferTimer_ = 0.0f;
     float wallJumpLockTimer_ = 0.0f; // 壁キック後の操作不能時間
+    int jumpCount_ = 0;          // 現在のジャンプ回数
+    const int kMaxJumps = 2;     // 最大ジャンプ回数 (2なら二段ジャンプ)
 
     // ローリング関連
     bool isRolling_ = false;       // ローリング中か
