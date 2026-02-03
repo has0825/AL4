@@ -7,20 +7,22 @@
 
 // ブロックの種類
 enum class BlockType {
-    FallOnly = 3,     // 3: プレイヤーが下に来ると落ちる
-    Spike = 4,        // 4: 落ちた後、乗ると上がる
-    RiseOnTop = 6,    // 6: [新] プレイヤーが真上にいると上がる
-    SideAttack = 7,   // 7: [新] プレイヤーが近づくと横に飛ぶ
-    FallOnTop = 8     // 8: [新] プレイヤーが真上にいると落ちる
+    FallOnly = 3,       // 3: プレイヤーが下に来ると落ちる
+    Spike = 4,          // 4: 落ちた後、乗ると上がる
+    RiseOnTop = 6,      // 6: プレイヤーが真上にいると上がる
+    SideAttack = 7,     // 7: プレイヤーが近づくと横に飛ぶ
+    FallOnTop = 8,      // 8: プレイヤーが真上にいると落ちる
+    StaticHazard = 9,   // 9: [追加] 動かないが、触れると即死するトラップ
+    RiseThenFall = 10   // 10: [追加] 上に乗ると上昇し、天井で止まり、下に人が来ると落ちる
 };
 
 // ブロックの状態
 enum class BlockState {
     Idle,           // 待機中
     Falling,        // 落下中
-    Landed,         // 着地済み
+    Landed,         // 着地（または天井到達）済み待機
     Rising,         // 上昇中
-    MovingSide      // [新] 横移動中
+    MovingSide      // 横移動中
 };
 
 class FallingBlock {
@@ -45,16 +47,19 @@ private:
     BlockType type_ = BlockType::FallOnly;
     BlockState state_ = BlockState::Idle;
 
-    // 落下速度等のパラメータ
+    // パラメータ
     const float kFallSpeed_ = 0.2f;
-    const float kRiseSpeed_ = 0.1f;
-    const float kSideSpeed_ = 0.3f; // 横移動の速度
+    const float kRiseSpeed_ = 0.2f;
+    const float kSideSpeed_ = 0.3f;
 
     // 着地情報
     float landedY_ = 0.0f;
     int lastLandedGridX_ = -1;
     int lastLandedGridMapY_ = -1;
 
-    // Type 7用: 移動方向 (1:右, -1:左)
+    // 横移動用
     float moveDirX_ = 0.0f;
+
+    // Type 10用: 天井に張り付いているかどうかのフラグ
+    bool isCeiling_ = false;
 };

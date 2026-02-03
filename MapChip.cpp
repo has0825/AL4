@@ -5,13 +5,11 @@
 #include <cassert>
 #include <Windows.h>
 #include <string>
+#include <cmath> 
 
-// マップチップ1つのサイズ
 const float MapChip::kBlockSize = 0.7f;
 
-// デストラクタの実装
 MapChip::~MapChip() {
-    // 確保したモデルをすべて解放する
     for (Model* model : models_) {
         delete model;
     }
@@ -19,160 +17,142 @@ MapChip::~MapChip() {
 }
 
 void MapChip::Initialize() {
-    // 処理を Load に移動したため、ここは空
 }
 
 void MapChip::Load(const std::string& filePath, ID3D12Device* device) {
-    // 確保済みのモデルを解放
     for (Model* model : models_) {
         delete model;
     }
     models_.clear();
     data_.clear();
-
     dynamicBlocks_.clear();
     hasGoal_ = false;
 
-    // map.csv ファイルを開く
     std::ifstream file(filePath);
     assert(file.is_open() && "FAIL: map file could not be opened.");
 
-    // map.csv から data_ に読み込み
     std::string line;
     while (std::getline(file, line)) {
         std::vector<int> row;
         std::string cell;
         std::stringstream ss(line);
         while (std::getline(ss, cell, ',')) {
-            if (cell.empty()) {
-                row.push_back(0);
-            } else {
-                int cellValue = std::stoi(cell);
-                row.push_back(cellValue);
-            }
+            row.push_back(std::stoi(cell));
         }
         data_.push_back(row);
     }
     file.close();
 
-    // 読み込んだデータに基づいてモデルを生成・配置する
-    Transform transform;
-    transform.scale = { kBlockSize, kBlockSize, kBlockSize };
-    transform.rotate = { 0, 0, 0 };
+    size_t rowCount = data_.size();
 
-    for (size_t y = 0; y < data_.size(); ++y) {
+    for (size_t y = 0; y < rowCount; ++y) {
         for (size_t x = 0; x < data_[y].size(); ++x) {
+            int type = data_[y][x];
 
-            int cellValue = data_[y][x];
+            float worldX = x * kBlockSize + kBlockSize / 2.0f;
+            float worldY = (static_cast<float>(rowCount - 1) - static_cast<float>(y)) * kBlockSize + kBlockSize / 2.0f;
+            Vector3 pos = { worldX, worldY, 0.0f };
 
-            // (x, y) からワールド座標を計算
-            float worldY = (static_cast<float>(data_.size() - 1) - static_cast<float>(y)) * kBlockSize;
-            float worldX = static_cast<float>(x) * kBlockSize;
-            Vector3 pos = { worldX + kBlockSize / 2.0f, worldY + kBlockSize / 2.0f, 0.0f };
-
-            if (cellValue == 1) {
-                // 1なら静的ブロックのモデルを生成
-                Model* model = Model::Create("Resources/block", "block.obj", device);
-                transform.translate = pos;
-                model->transform = transform;
-                models_.push_back(model);
-            } else if (cellValue == 3 || cellValue == 4 || cellValue == 6 || cellValue == 7 || cellValue == 8) {
-                // 3, 4, 6, 7, 8 は動的ブロックとして登録
-                dynamicBlocks_.push_back({ pos, cellValue });
-            } else if (cellValue == 5) {
-                // 5 (ゴール) の位置を記録
+            if (type == 1) { // 壁
+                Model* block = Model::Create("Resources/block", "block.obj", device);
+                block->transform.translate = pos;
+                block->transform.scale = { kBlockSize, kBlockSize, kBlockSize };
+                models_.push_back(block);
+            } else if (type == 2) { // スタート
+                startPosition_ = pos;
+                data_[y][x] = 0;
+            } else if (type == 5) { // ゴール
                 goalPos_ = pos;
                 hasGoal_ = true;
+                data_[y][x] = 0;
+            } else if (type >= 3) { // 動的ブロック (3,4,6,7,8,9,10)
+                DynamicBlockData d;
+                d.position = pos;
+                d.type = type;
+                dynamicBlocks_.push_back(d);
+                data_[y][x] = 0;
             }
         }
     }
 }
 
-void MapChip::Draw(
-    ID3D12GraphicsCommandList* commandList,
-    const Matrix4x4& viewProjectionMatrix,
-    D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress,
-    D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {
-
-    // 静的なブロック (1) を描画
+void MapChip::Draw(ID3D12GraphicsCommandList* commandList, const Matrix4x4& viewProjectionMatrix, D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress, D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {
     for (Model* model : models_) {
         model->Draw(commandList, viewProjectionMatrix, lightGpuAddress, textureSrvHandle);
     }
 }
 
 bool MapChip::CheckCollision(const Vector3& worldPos) {
-    if (data_.empty()) {
-        return false;
-    }
     int x = static_cast<int>(floor(worldPos.x / kBlockSize));
     int y = static_cast<int>(floor(worldPos.y / kBlockSize));
-    int mapY = (static_cast<int>(data_.size() - 1)) - y;
+    int mapY = (static_cast<int>(data_.size()) - 1) - y;
 
-    // 1. マップの「左端」か「上端」に出た場合、壁とみなす (true)
-    if (x < 0 || mapY < 0) {
+    if (mapY < 0 || mapY >= data_.size()) return false;
+    if (x < 0 || x >= data_[mapY].size()) return false;
+
+    if (data_[mapY][x] == 1) {
         return true;
     }
-
-    // 2. マップの「右端」か「下端」に出た場合、空間とみなす (false)
-    if (x >= static_cast<int>(data_[0].size()) || mapY >= static_cast<int>(data_.size())) {
-        return false;
-    }
-
-    // 3. マップの内側の場合、data_ を参照する
-    return data_[mapY][x] == 1;
+    return false;
 }
 
 bool MapChip::CheckGoalCollision(const Vector3& playerPos, float playerHalfSize) const {
-    // ゴールがマップになければ
-    if (!hasGoal_) {
-        return false;
-    }
+    if (!hasGoal_) return false;
 
-    // プレイヤーのAABB
     float pLeft = playerPos.x - playerHalfSize;
     float pRight = playerPos.x + playerHalfSize;
     float pTop = playerPos.y + playerHalfSize;
     float pBottom = playerPos.y - playerHalfSize;
 
-    // ゴールのAABB
     float halfSize = kBlockSize / 2.0f;
     float gLeft = goalPos_.x - halfSize;
     float gRight = goalPos_.x + halfSize;
     float gTop = goalPos_.y + halfSize;
     float gBottom = goalPos_.y - halfSize;
 
-    // AABB 衝突判定
     if (pLeft > gRight || pRight < gLeft || pTop < gBottom || pBottom > gTop) {
-        return false; // 衝突していない
+        return false;
     }
-
-    return true; // 衝突している
+    return true;
 }
 
 void MapChip::GetGridCoordinates(const Vector3& worldPos, int& outX, int& outMapY) const {
-    if (data_.empty()) {
-        outX = -1;
-        outMapY = -1;
-        return;
-    }
+    if (data_.empty()) { outX = -1; outMapY = -1; return; }
     outX = static_cast<int>(floor(worldPos.x / kBlockSize));
     int y = static_cast<int>(floor(worldPos.y / kBlockSize));
     outMapY = (static_cast<int>(data_.size() - 1)) - y;
 
-    // 境界チェック
-    if (outX < 0 || outX >= static_cast<int>(data_[0].size()) || outMapY < 0 || outMapY >= static_cast<int>(data_.size())) {
-        outX = -1;
-        outMapY = -1;
+    if (outMapY < 0 || outMapY >= data_.size() || outX < 0 || outX >= data_[outMapY].size()) {
+        outX = -1; outMapY = -1;
     }
 }
 
 void MapChip::SetGridCell(int x, int mapY, int value) {
-    if (data_.empty()) { return; }
-
-    // 境界チェック
-    if (x < 0 || x >= static_cast<int>(data_[0].size()) || mapY < 0 || mapY >= static_cast<int>(data_.size())) {
-        return;
+    if (mapY >= 0 && mapY < data_.size()) {
+        if (x >= 0 && x < data_[mapY].size()) {
+            data_[mapY][x] = value;
+        }
     }
-    // 値を上書き
-    data_[mapY][x] = value;
+}
+
+// ★追加実装: 指定タイプのブロック位置を検索
+bool MapChip::FindBlock(int type, int& outGridX, int& outMapY) const {
+    // dynamicBlocks_ に格納されている情報から探す
+    for (const auto& db : dynamicBlocks_) {
+        if (db.type == type) {
+            GetGridCoordinates(db.position, outGridX, outMapY);
+            return true;
+        }
+    }
+    return false;
+}
+
+// ★追加実装: グリッド座標をワールド座標へ変換
+Vector3 MapChip::GetWorldPosFromGrid(int gridX, int gridMapY) const {
+    size_t rowCount = data_.size();
+    float worldX = gridX * kBlockSize + kBlockSize / 2.0f;
+    // 配列インデックス(gridMapY) から ワールドYへの変換
+    // worldY = (rowCount - 1 - index) * size + size/2
+    float worldY = (static_cast<float>(rowCount - 1) - static_cast<float>(gridMapY)) * kBlockSize + kBlockSize / 2.0f;
+    return { worldX, worldY, 0.0f };
 }

@@ -37,6 +37,7 @@ public:
     void ExecuteCommand();
     void WaitForGPU();
     void ResetCommandList();
+    void ClearDepthBuffer();
 
 private:
     DirectXCommon() = default;

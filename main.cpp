@@ -304,9 +304,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Microsoft::WRL::ComPtr<ID3D12Resource> skydomeTextureResource = LoadAndCreateTextureSRV("Resources/skydome/sky_sphere.png", 8);
     D3D12_GPU_DESCRIPTOR_HANDLE skydomeTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 8);
 
-    // ★追加: Trap用テクスチャ (Index: 9)
     Microsoft::WRL::ComPtr<ID3D12Resource> trapTextureResource = LoadAndCreateTextureSRV("Resources/Trap/Trap.png", 9);
     D3D12_GPU_DESCRIPTOR_HANDLE trapTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 9);
+
+    Microsoft::WRL::ComPtr<ID3D12Resource> flagTextureResource = LoadAndCreateTextureSRV("Resources/flag.png", 10);
+    D3D12_GPU_DESCRIPTOR_HANDLE flagTextureSrvHandleGPU = GetGPUDescriptorHandle(srvDescriptorHeap.Get(), descriptorSizeSRV, 10);
 
 
     // =========================================================================
@@ -363,6 +365,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     Vector3 currentRespawnPos = { 0.0f, 0.0f, 0.0f };
     std::string nextMapFilePath = "";
     Vector3 nextRespawnPos = { 0.0f, 0.0f, 0.0f };
+
+    // ★ Map3用変数
+    float map3Timer = 0.0f;
+    bool map3EventTriggered = false;
+    Vector3 block6Pos = { 9999.0f, 0.0f, 0.0f }; // 6番ブロックの位置
 
     // --- ゲームリソース解放用ラムダ ---
     auto cleanupGameResources = [&]() {
@@ -428,56 +435,118 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     newBlock->Initialize(device, data.position, static_cast<BlockType>(data.type));
                     fallingBlocks_.push_back(newBlock);
                 }
+
+                // ★ Map3の初期設定
+                if (currentMapFilePath == "Resources/map3.csv") {
+                    map3Timer = 0.0f;
+                    map3EventTriggered = false;
+                    // 6番(RiseOnTop)ブロックの場所を探す
+                    int gx, gy;
+                    if (mapChip->FindBlock(6, gx, gy)) {
+                        block6Pos = mapChip->GetWorldPosFromGrid(gx, gy);
+                    } else {
+                        block6Pos = { 9999.0f, 0.0f, 0.0f };
+                    }
+                }
+
                 if (mapChip->HasGoal()) {
-                    goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
+                    goalModel_ = Model::Create("Resources", "flag.obj", device);
                     if (goalModel_) {
                         goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
                         goalModel_->transform.rotate = { 0.0f, 0.0f, 0.0f };
-                        goalModel_->transform.translate = mapChip->GetGoalPosition();
+                        Vector3 goalPos = mapChip->GetGoalPosition();
+                        goalPos.y -= MapChip::kBlockSize * 0.5f;
+                        goalModel_->transform.translate = goalPos;
                     }
                 }
                 isLoadingNextMap = false;
                 isGameInitialized = true;
             }
 
-            if (!isLoadingNextMap) {
-                if (player->IsAlive()) {
-                    player->Update();
-                    if (player->GetPosition().y < -10.0f) {
-                        currentScene = GameScene::GameOver;
-                    }
-                } else {
-                    currentScene = GameScene::GameOver;
+            if (!isLoadingNextMap && isGameInitialized) {
+                // 1. プレイヤーの更新
+                player->Update();
+
+                // 2. 奈落（画面外）の死亡判定
+                if (player->IsAlive() && player->GetPosition().y < -5.0f) {
+                    player->Die();
                 }
 
+                // 3. ギミック・エネミーの更新 (死亡中も動かす)
                 for (Trap* trap : traps_) trap->Update(player);
                 for (FallingBlock* block : fallingBlocks_) block->Update(player, mapChip);
 
-                // --- マップ移動・クリア判定 ---
-                if (currentMapFilePath == "Resources/map.csv") {
-                    if (player->IsExiting()) {
-                        isLoadingNextMap = true;
-                        nextMapFilePath = "Resources/map2.csv";
-                        size_t map2Height = 15;
-                        float spawnY = (static_cast<float>(map2Height - 1) - 14.0f) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
-                        float spawnX = (MapChip::kBlockSize / 2.0f);
-                        nextRespawnPos = { spawnX, spawnY, 0.0f };
+                // ★ Map3専用ギミック：6を飛び越える or 20秒経過で壁生成＆ゴール移動
+                if (currentMapFilePath == "Resources/map3.csv" && !map3EventTriggered) {
+                    map3Timer += 1.0f / 60.0f;
+
+                    bool timerCondition = (map3Timer >= 20.0f);
+                    // プレイヤーのX座標がブロック6より右に行った(飛び越えた)
+                    bool jumpCondition = (block6Pos.x < 9000.0f && player->GetPosition().x > block6Pos.x + MapChip::kBlockSize);
+
+                    if (timerCondition || jumpCondition) {
+                        map3EventTriggered = true;
+
+                        // 1. ゴールを反対側(左側)に移動
+                        float goalX = MapChip::kBlockSize * 1.5f;
+                        float goalY = MapChip::kBlockSize * 1.5f; // 床高さに応じて調整
+                        Vector3 newGoalPos = { goalX, goalY, 0.0f };
+                        mapChip->SetGoalPosition(newGoalPos);
+                        if (goalModel_) {
+                            goalModel_->transform.translate = newGoalPos;
+                            goalModel_->transform.translate.y -= MapChip::kBlockSize * 0.5f;
+                        }
+
+                        // 2. 真ん中に9(StaticHazard)を縦に並べる
+                        // マップ幅20なら真ん中は x=10
+                        int midX = 10;
+                        size_t rows = mapChip->GetRowCount();
+                        for (int y = 0; y < rows; ++y) {
+                            // 天井と床を残して壁を作る(あるいは全埋め)
+                            // 9番のFallingBlockを生成
+                            Vector3 spawnPos = mapChip->GetWorldPosFromGrid(midX, y);
+                            FallingBlock* newWall = new FallingBlock();
+                            newWall->Initialize(device, spawnPos, BlockType::StaticHazard);
+                            fallingBlocks_.push_back(newWall);
+                        }
                     }
-                } else if (currentMapFilePath == "Resources/map2.csv") {
-                    Vector3 pPos = player->GetPosition();
-                    float mapTopY = static_cast<float>(mapChip->GetRowCount()) * MapChip::kBlockSize;
-                    if (pPos.x < MapChip::kBlockSize * 2.0f && pPos.y > mapTopY - (MapChip::kBlockSize * 2.0f)) {
-                        isLoadingNextMap = true;
-                        nextMapFilePath = "Resources/map3.csv";
-                        float spawnX = MapChip::kBlockSize * 3.5f;
-                        float spawnY = MapChip::kBlockSize * 1.5f;
-                        nextRespawnPos = { spawnX, spawnY, 0.0f };
+                }
+
+                // 4. 死亡後のリトライ受付
+                if (!player->IsAlive()) {
+                    if (input->IsKeyPressed(VK_SPACE)) {
+                        cleanupGameResources();
+                        goto end_of_update;
                     }
-                } else if (currentMapFilePath == "Resources/map3.csv") {
-                    if (player->IsAlive() && mapChip->HasGoal() && mapChip->CheckGoalCollision(player->GetPosition(), player->GetHalfSize())) {
-                        currentScene = GameScene::GameClear;
-                        currentMapFilePath = "Resources/map.csv";
-                        currentRespawnPos = { 0.0f, 0.0f, 0.0f };
+                }
+
+                // 5. マップ移動・クリア判定 (生存中のみ)
+                if (player->IsAlive()) {
+                    if (currentMapFilePath == "Resources/map.csv") {
+                        if (player->IsExiting()) {
+                            isLoadingNextMap = true;
+                            nextMapFilePath = "Resources/map2.csv";
+                            size_t map2Height = 15;
+                            float spawnY = (static_cast<float>(map2Height - 1) - 14.0f) * MapChip::kBlockSize + (MapChip::kBlockSize / 2.0f);
+                            float spawnX = (MapChip::kBlockSize / 2.0f);
+                            nextRespawnPos = { spawnX, spawnY, 0.0f };
+                        }
+                    } else if (currentMapFilePath == "Resources/map2.csv") {
+                        Vector3 pPos = player->GetPosition();
+                        float mapTopY = static_cast<float>(mapChip->GetRowCount()) * MapChip::kBlockSize;
+                        if (pPos.x < MapChip::kBlockSize * 2.0f && pPos.y > mapTopY - (MapChip::kBlockSize * 2.0f)) {
+                            isLoadingNextMap = true;
+                            nextMapFilePath = "Resources/map3.csv";
+                            float spawnX = MapChip::kBlockSize * 3.5f;
+                            float spawnY = MapChip::kBlockSize * 1.5f;
+                            nextRespawnPos = { spawnX, spawnY, 0.0f };
+                        }
+                    } else if (currentMapFilePath == "Resources/map3.csv") {
+                        if (mapChip->HasGoal() && mapChip->CheckGoalCollision(player->GetPosition(), player->GetHalfSize())) {
+                            currentScene = GameScene::GameClear;
+                            currentMapFilePath = "Resources/map.csv";
+                            currentRespawnPos = { 0.0f, 0.0f, 0.0f };
+                        }
                     }
                 }
             }
@@ -499,11 +568,13 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     fallingBlocks_.push_back(newBlock);
                 }
                 if (mapChip->HasGoal()) {
-                    goalModel_ = Model::Create("Resources/cube", "cube.obj", device);
+                    goalModel_ = Model::Create("Resources", "flag.obj", device);
                     if (goalModel_) {
                         goalModel_->transform.scale = { MapChip::kBlockSize, MapChip::kBlockSize, MapChip::kBlockSize };
                         goalModel_->transform.rotate = { 0.0f, 0.0f, 0.0f };
-                        goalModel_->transform.translate = mapChip->GetGoalPosition();
+                        Vector3 goalPos = mapChip->GetGoalPosition();
+                        goalPos.y -= MapChip::kBlockSize * 0.5f;
+                        goalModel_->transform.translate = goalPos;
                     }
                 }
                 isLoadingNextMap = false;
@@ -524,6 +595,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             }
             break;
         }
+
+    end_of_update:
 
         // --- 描画開始 ---
         dxCommon->PreDraw();
@@ -551,26 +624,29 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
             if (titleModel && titleTextureResource) {
                 titleModel->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), titleTextureSrvHandleGPU);
             }
-        } else if (currentScene == GameScene::GameOver) {
-            if (gameOverModel && gameOverTextureResource) {
-                gameOverModel->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), gameOverTextureSrvHandleGPU);
-            }
         } else if (currentScene == GameScene::GameClear) {
             if (gameClearModel && gameClearTextureResource) {
                 gameClearModel->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), gameClearTextureSrvHandleGPU);
             }
-        } else if (currentScene == GameScene::GamePlay && isGameInitialized) {
+        } else if (currentScene == GameScene::GamePlay && isGameInitialized && player != nullptr) {
+            // 背景を描画
             if (blockTextureResource) mapChip->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), blockTextureSrvHandleGPU);
             if (playerTextureResource) player->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), playerTextureSrvHandleGPU);
             if (cubeTextureResource) {
                 for (Trap* trap : traps_) trap->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), cubeTextureSrvHandleGPU);
-                if (goalModel_) goalModel_->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), cubeTextureSrvHandleGPU);
+                if (goalModel_) goalModel_->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), flagTextureSrvHandleGPU);
             }
-
-            // ★ 変更: FallingBlock (マップの3,4など) の描画に trapTextureSrvHandleGPU を使用
             if (trapTextureResource) {
                 for (FallingBlock* block : fallingBlocks_) {
                     block->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), trapTextureSrvHandleGPU);
+                }
+            }
+
+            // ★ 死亡演出：GameOverを最前面に描画
+            if (!player->IsAlive()) {
+                dxCommon->ClearDepthBuffer();
+                if (gameOverModel && gameOverTextureResource) {
+                    gameOverModel->Draw(commandList, viewProjectionMatrix, directionalLightResource->GetGPUVirtualAddress(), gameOverTextureSrvHandleGPU);
                 }
             }
         }

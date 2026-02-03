@@ -33,47 +33,47 @@ void Player::Update() {
     const float kWallJumpPowerY = 0.42f;
     const float kPlayerHalfSize = 0.2f;
 
-    // ▼▼▼ 移動と向き ▼▼▼
+    // ▼▼▼ 死亡時の演出処理 ▼▼▼
+    if (!isAlive_) {
+        velocity_.y -= kGravity;
+        transform_.translate.y += velocity_.y;
+
+        // 死亡演出：回転
+        transform_.rotate.z += 0.1f;
+        transform_.rotate.x += 0.05f;
+
+        model_->transform = transform_;
+        return; // 操作を受け付けない
+    }
+
+    // ▼▼▼ 生存時の通常更新 ▼▼▼
     velocity_.x = 0.0f;
     float moveX = 0.0f;
 
     if (input->IsKeyDown('D')) {
         moveX = kMoveSpeed;
-        lrDirection_ = 1.0f; // 右
+        lrDirection_ = 1.0f;
     }
     if (input->IsKeyDown('A')) {
         moveX = -kMoveSpeed;
-        lrDirection_ = -1.0f; // 左
+        lrDirection_ = -1.0f;
     }
     velocity_.x = moveX;
 
-
-    // ▼▼▼ 弾の発射 (Jキー) ▼▼▼
     if (input->IsKeyPressed('J')) {
         PlayerBullet* newBullet = new PlayerBullet();
-
-        // 速度: 向きに合わせて設定 (0.3)
         float bulletSpeed = 0.3f * lrDirection_;
-
-        // 初期化
         newBullet->Initialize(bulletModel_, transform_.translate, bulletSpeed);
-
-        // リストに追加 (これで前の弾も消えない)
         bullets_.push_back(newBullet);
     }
 
-    // ▼▼▼ 弾の更新と削除 ▼▼▼
     bullets_.remove_if([this](PlayerBullet* bullet) {
-        // 寿命か壁衝突で true が返ってきたら削除
         if (bullet->Update(mapChip_)) {
-            delete bullet; // メモリ解放
-            return true;   // リストから外す
+            delete bullet;
+            return true;
         }
         return false;
         });
-
-
-    // ▼▼▼ プレイヤーの物理演算 ▼▼▼
 
     if (wallTouch_ != WallTouchSide::None && !onGround_ && velocity_.y < -kWallSlideSpeed) {
         velocity_.y = -kWallSlideSpeed;
@@ -106,7 +106,6 @@ void Player::Update() {
     }
 
     position.x += velocity_.x;
-
     playerLeft = position.x - kPlayerHalfSize;
     playerRight = position.x + kPlayerHalfSize;
     playerTop = position.y + kPlayerHalfSize;
@@ -133,13 +132,7 @@ void Player::Update() {
             float mapWidth = static_cast<float>(colCount) * MapChip::kBlockSize;
             float topExitY_Min = 7.7f;
             float bottomExitY_Max = 0.7f;
-            bool isOutOfMap = (playerRight > mapWidth);
-            bool isAtTopExit = (transform_.translate.y > topExitY_Min);
-            bool isAtBottomExit = (transform_.translate.y < bottomExitY_Max);
-
-            if (isOutOfMap && (isAtTopExit || isAtBottomExit)) {
-                // 出口
-            } else {
+            if (!(playerRight > mapWidth && (transform_.translate.y > topExitY_Min || transform_.translate.y < bottomExitY_Max))) {
                 position.x = floor(playerRight / MapChip::kBlockSize) * MapChip::kBlockSize - kPlayerHalfSize - 0.001f;
                 if (!onGround_) wallTouch_ = WallTouchSide::Right;
                 velocity_.x = 0;
@@ -149,13 +142,8 @@ void Player::Update() {
 
     transform_.translate = position;
 
-    // --- ジャンプ ---
-    if (jumpBufferTimer_ > 0.0f) {
-        jumpBufferTimer_ -= 0.016f;
-    }
-    if (input->IsKeyPressed(VK_SPACE)) {
-        jumpBufferTimer_ = 0.1f;
-    }
+    if (jumpBufferTimer_ > 0.0f) jumpBufferTimer_ -= 0.016f;
+    if (input->IsKeyPressed(VK_SPACE)) jumpBufferTimer_ = 0.1f;
 
     if (jumpBufferTimer_ > 0.0f) {
         if (onGround_) {
@@ -163,96 +151,59 @@ void Player::Update() {
             jumpBufferTimer_ = 0.0f;
             onGround_ = false;
         } else if (wallTouch_ == WallTouchSide::Left && moveX >= 0) {
-            velocity_.y = kWallJumpPowerY;
-            velocity_.x = kWallJumpPowerX;
-            jumpBufferTimer_ = 0.0f;
-            transform_.rotate.y = -(float)M_PI / 2.0f;
-            wallTouch_ = WallTouchSide::None;
-            lrDirection_ = 1.0f;
+            velocity_.y = kWallJumpPowerY; velocity_.x = kWallJumpPowerX;
+            jumpBufferTimer_ = 0.0f; transform_.rotate.y = -(float)M_PI / 2.0f;
+            wallTouch_ = WallTouchSide::None; lrDirection_ = 1.0f;
         } else if (wallTouch_ == WallTouchSide::Right && moveX <= 0) {
-            velocity_.y = kWallJumpPowerY;
-            velocity_.x = -kWallJumpPowerX;
-            jumpBufferTimer_ = 0.0f;
-            transform_.rotate.y = (float)M_PI / 2.0f;
-            wallTouch_ = WallTouchSide::None;
-            lrDirection_ = -1.0f;
+            velocity_.y = kWallJumpPowerY; velocity_.x = -kWallJumpPowerX;
+            jumpBufferTimer_ = 0.0f; transform_.rotate.y = (float)M_PI / 2.0f;
+            wallTouch_ = WallTouchSide::None; lrDirection_ = -1.0f;
         }
     }
 
-    // 向きの更新
     if (onGround_) {
-        if (moveX > 0.0f) {
-            transform_.rotate.y = -(float)M_PI / 2.0f;
-        } else if (moveX < 0.0f) {
-            transform_.rotate.y = (float)M_PI / 2.0f;
-        }
+        if (moveX > 0.0f) transform_.rotate.y = -(float)M_PI / 2.0f;
+        else if (moveX < 0.0f) transform_.rotate.y = (float)M_PI / 2.0f;
     } else if (wallTouch_ == WallTouchSide::None) {
-        if (velocity_.x > 0.01f) {
-            transform_.rotate.y = -(float)M_PI / 2.0f;
-        } else if (velocity_.x < -0.01f) {
-            transform_.rotate.y = (float)M_PI / 2.0f;
-        }
+        if (velocity_.x > 0.01f) transform_.rotate.y = -(float)M_PI / 2.0f;
+        else if (velocity_.x < -0.01f) transform_.rotate.y = (float)M_PI / 2.0f;
     }
 
     model_->transform = transform_;
 }
 
-void Player::Draw(
-    ID3D12GraphicsCommandList* commandList,
-    const Matrix4x4& viewProjectionMatrix,
-    D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress,
-    D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {
-
-    // プレイヤー本体の描画
-    model_->Draw(commandList, viewProjectionMatrix, lightGpuAddress, textureSrvHandle);
-
-    // ★ 弾の描画
-    for (PlayerBullet* bullet : bullets_) {
-        bullet->Draw(commandList, viewProjectionMatrix, lightGpuAddress, textureSrvHandle);
-    }
-}
-
-void Player::ImGui_Draw() {
-    ImGui::Begin("Player");
-    ImGui::SliderFloat3("Scale", &transform_.scale.x, 0.1f, 5.0f);
-    ImGui::SliderAngle("RotateX", &transform_.rotate.x, -180.0f, 180.0f);
-    ImGui::SliderAngle("RotateY", &transform_.rotate.y, -180.0f, 180.0f);
-    ImGui::SliderAngle("RotateZ", &transform_.rotate.z, -180.0f, 180.0f);
-    ImGui::SliderFloat3("Translate", &transform_.translate.x, -10.0f, 20.0f);
-    ImGui::Text("Velocity: %.3f, %.3f", velocity_.x, velocity_.y);
-    ImGui::Text("OnGround: %s", onGround_ ? "true" : "false");
-    ImGui::Text("Bullets: %d", (int)bullets_.size()); // 弾数の確認
-    ImGui::Text("isAlive: %s", isAlive_ ? "TRUE" : "FALSE");
-    ImGui::End();
-}
-
 void Player::Die() {
+    if (!isAlive_) return;
     isAlive_ = false;
-    velocity_ = { 0.0f, 0.0f, 0.0f };
+    velocity_.x = 0.0f;
+    velocity_.y = 0.4f; // 跳ね上がり
 }
 
 void Player::Reset() {
     SetPosition(initialPosition_);
     isAlive_ = true;
-
-    // リセット時に弾を消す
-    for (PlayerBullet* bullet : bullets_) {
-        delete bullet;
-    }
+    transform_.rotate = { 0.0f, 0.0f, 0.0f };
+    for (PlayerBullet* bullet : bullets_) delete bullet;
     bullets_.clear();
 }
 
+void Player::Draw(ID3D12GraphicsCommandList* commandList, const Matrix4x4& viewProjectionMatrix, D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress, D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle) {
+    model_->Draw(commandList, viewProjectionMatrix, lightGpuAddress, textureSrvHandle);
+    for (PlayerBullet* bullet : bullets_) bullet->Draw(commandList, viewProjectionMatrix, lightGpuAddress, textureSrvHandle);
+}
+
+void Player::ImGui_Draw() {
+    ImGui::Begin("Player");
+    ImGui::Text("isAlive: %s", isAlive_ ? "TRUE" : "FALSE");
+    ImGui::Text("Pos: %.2f, %.2f", transform_.translate.x, transform_.translate.y);
+    ImGui::End();
+}
+
 bool Player::IsExiting() const {
-    if (!mapChip_) { return false; }
-    size_t colCount = 20;
-    if (mapChip_->GetColCount() > 0) colCount = mapChip_->GetColCount();
-    float mapWidth = static_cast<float>(colCount) * MapChip::kBlockSize;
-    const Vector3& pos = transform_.translate;
-    if (pos.x > mapWidth) {
-        float topExitY_Min = 7.7f;
-        float bottomExitY_Max = 0.7f;
-        if (pos.y > topExitY_Min) return true;
-        if (pos.y < bottomExitY_Max) return true;
+    if (!mapChip_) return false;
+    float mapWidth = static_cast<float>(mapChip_->GetColCount()) * MapChip::kBlockSize;
+    if (transform_.translate.x > mapWidth) {
+        if (transform_.translate.y > 7.7f || transform_.translate.y < 0.7f) return true;
     }
     return false;
 }
@@ -265,10 +216,6 @@ void Player::SetPosition(const Vector3& pos) {
     jumpBufferTimer_ = 0.0f;
     model_->transform = transform_;
     initialPosition_ = pos;
-
-    // 位置リセット時に弾を消す
-    for (PlayerBullet* bullet : bullets_) {
-        delete bullet;
-    }
+    for (PlayerBullet* bullet : bullets_) delete bullet;
     bullets_.clear();
 }

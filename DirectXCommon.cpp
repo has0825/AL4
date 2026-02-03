@@ -269,3 +269,12 @@ void DirectXCommon::ResetCommandList() {
     hr = commandList_->Reset(commandAllocator_.Get(), nullptr);
     assert(SUCCEEDED(hr));
 }
+
+// ★ 以下の実装を追加
+void DirectXCommon::ClearDepthBuffer() {
+    // 深度バッファのハンドルを取得
+    D3D12_CPU_DESCRIPTOR_HANDLE dsvHandle = dsvDescriptorHeap_->GetCPUDescriptorHandleForHeapStart();
+
+    // 現在のコマンドリストに対して、深度値を 1.0f (一番奥) でクリアするよう命じる
+    commandList_->ClearDepthStencilView(dsvHandle, D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+}

@@ -3,25 +3,22 @@
 #include <string>
 #include "Model.h"
 #include "MathTypes.h"
-#include <d3d12.h> // ID3D12Device を使うために追加
+#include <d3d12.h> 
 
-// 3(落ちる) 4(スパイク) のトリガー情報を格納する構造体
+// 動的ブロック（罠や落下ブロック）の初期配置情報
 struct DynamicBlockData {
-    Vector3 position; // 3, 4 が書かれていたセルの中心ワールド座標
-    int type; // 3 or 4
+    Vector3 position;
+    int type;
 };
 
 class MapChip {
 public:
-    // マップチップのサイズ（定数）
-    static const float kBlockSize; // (定義は .cpp で 0.7f に設定)
+    static const float kBlockSize;
 
-    // デストラクタ
     ~MapChip();
 
-    void Initialize(); // 中身は空
+    void Initialize();
 
-    // 引数に device を追加
     void Load(const std::string& filePath, ID3D12Device* device);
 
     void Draw(
@@ -30,45 +27,44 @@ public:
         D3D12_GPU_VIRTUAL_ADDRESS lightGpuAddress,
         D3D12_GPU_DESCRIPTOR_HANDLE textureSrvHandle);
 
-    // 指定されたワールド座標がブロックと衝突しているか判定する
     bool CheckCollision(const Vector3& worldPos);
 
-    // マップの行数を取得
     size_t GetRowCount() const { return data_.size(); }
-    // マップの列数を取得
     size_t GetColCount() const { return data_.empty() ? 0 : data_[0].size(); }
 
-    // プレイヤーの初期位置を取得するゲッター
     const Vector3& GetStartPosition() const { return startPosition_; }
 
-    // 読み込んだ動的ブロックのリストを取得
     const std::vector<DynamicBlockData>& GetDynamicBlocks() const { return dynamicBlocks_; }
 
-    // ゴールとの当たり判定
     bool CheckGoalCollision(const Vector3& playerPos, float playerHalfSize) const;
 
-    // ゴールの位置を取得するゲッター
     const Vector3& GetGoalPosition() const { return goalPos_; }
     bool HasGoal() const { return hasGoal_; }
 
-    // --- ▼▼▼ ★★★ 修正・追加 (ここから) ★★★ ---
-    // ワールド座標からグリッド座標 (x, mapY) を取得 (失敗したら -1)
+    // ★追加: ゲーム中にゴールの位置を変更するための関数
+    void SetGoalPosition(const Vector3& newPos) { goalPos_ = newPos; }
+
     void GetGridCoordinates(const Vector3& worldPos, int& outX, int& outMapY) const;
 
-    // グリッド座標 (x, mapY) の data_ の値を書き換える
     void SetGridCell(int x, int mapY, int value);
-    // --- ▲▲▲ ★★★ 修正・追加 (ここまで) ★★★ ---
+
+    int GetGridValue(int x, int mapY) const {
+        if (x < 0 || mapY < 0 || mapY >= data_.size()) return -1;
+        if (x >= data_[mapY].size()) return -1;
+        return data_[mapY][x];
+    }
+
+    // ★追加: 指定したタイプのブロックが最初に見つかった場所を探す
+    bool FindBlock(int type, int& outGridX, int& outMapY) const;
+
+    // ★追加: グリッド座標からワールド座標を計算して返す
+    Vector3 GetWorldPosFromGrid(int gridX, int gridMapY) const;
 
 private:
     std::vector<std::vector<int>> data_;
     std::vector<Model*> models_;
-    // プレイヤーの初期位置を格納するメンバ変数
-    Vector3 startPosition_{ 0.0f, 0.0f, 0.0f }; // デフォルト値
-
-    // 読み込んだ動的ブロック情報 (3, 4)
+    Vector3 startPosition_ = { 0, 0, 0 };
+    Vector3 goalPos_ = { 0, 0, 0 };
+    bool hasGoal_ = false;
     std::vector<DynamicBlockData> dynamicBlocks_;
-
-    // ゴール(5)の座標
-    Vector3 goalPos_{};
-    bool hasGoal_ = false; // ゴールがマップにあるか
 };
