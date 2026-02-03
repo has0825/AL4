@@ -375,6 +375,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     int goalAnimPhase = 0; // 0:なし, 1:上昇, 2:左移動, 3:下降
     Vector3 goalTargetPosModel = { 0.0f, 0.0f, 0.0f }; // ゴールモデルの最終到達位置
 
+    float clearTimer = 0.0f; // ★追加: クリア演出の経過時間
+
     // --- ゲームリソース解放用ラムダ ---
     auto cleanupGameResources = [&]() {
         delete mapChip; mapChip = nullptr;
