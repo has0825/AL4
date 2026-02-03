@@ -371,6 +371,10 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     bool map3EventTriggered = false;
     Vector3 block6Pos = { 9999.0f, 0.0f, 0.0f }; // 6番ブロックの位置
 
+    // ★ ゴール移動アニメーション用変数
+    int goalAnimPhase = 0; // 0:なし, 1:上昇, 2:左移動, 3:下降
+    Vector3 goalTargetPosModel = { 0.0f, 0.0f, 0.0f }; // ゴールモデルの最終到達位置
+
     // --- ゲームリソース解放用ラムダ ---
     auto cleanupGameResources = [&]() {
         delete mapChip; mapChip = nullptr;
@@ -380,6 +384,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         for (Trap* trap : traps_) delete trap; traps_.clear();
         for (FallingBlock* block : fallingBlocks_) delete block; fallingBlocks_.clear();
         isGameInitialized = false;
+        map3EventTriggered = false;
+        goalAnimPhase = 0;
         };
 
     // ========== メインループ ==========
@@ -436,11 +442,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     fallingBlocks_.push_back(newBlock);
                 }
 
-                // ★ Map3の初期設定
+                // ★ Map3の初期設定 (初回ロード時)
                 if (currentMapFilePath == "Resources/map3.csv") {
                     map3Timer = 0.0f;
                     map3EventTriggered = false;
-                    // 6番(RiseOnTop)ブロックの場所を探す
+                    goalAnimPhase = 0;
                     int gx, gy;
                     if (mapChip->FindBlock(6, gx, gy)) {
                         block6Pos = mapChip->GetWorldPosFromGrid(gx, gy);
@@ -476,40 +482,88 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                 for (Trap* trap : traps_) trap->Update(player);
                 for (FallingBlock* block : fallingBlocks_) block->Update(player, mapChip);
 
-                // ★ Map3専用ギミック：6を飛び越える or 20秒経過で壁生成＆ゴール移動
+                // ★ Map3専用ギミック
                 if (currentMapFilePath == "Resources/map3.csv" && !map3EventTriggered) {
                     map3Timer += 1.0f / 60.0f;
 
-                    bool timerCondition = (map3Timer >= 20.0f);
-                    // プレイヤーのX座標がブロック6より右に行った(飛び越えた)
-                    bool jumpCondition = (block6Pos.x < 9000.0f && player->GetPosition().x > block6Pos.x + MapChip::kBlockSize);
+                    // 時間制限: 10秒
+                    bool timerCondition = (map3Timer >= 5.0f);
+
+                    // ジャンプ条件: 6番ブロック + 4ブロック分右に進んだら発動
+                    bool jumpCondition = (block6Pos.x < 9000.0f && player->GetPosition().x > block6Pos.x + MapChip::kBlockSize * 4.0f);
 
                     if (timerCondition || jumpCondition) {
                         map3EventTriggered = true;
 
-                        // 1. ゴールを反対側(左側)に移動
-                        float goalX = MapChip::kBlockSize * 1.5f;
-                        float goalY = MapChip::kBlockSize * 1.5f; // 床高さに応じて調整
+                        // ゴールの最終目的地を計算 (左側の x=3.5 あたりへ移動)
+                        float goalX = MapChip::kBlockSize * 3.5f;
+                        float goalY = MapChip::kBlockSize * 1.5f;
                         Vector3 newGoalPos = { goalX, goalY, 0.0f };
-                        mapChip->SetGoalPosition(newGoalPos);
+
+                        // モデル表示用の最終位置
+                        goalTargetPosModel = newGoalPos;
+                        goalTargetPosModel.y -= MapChip::kBlockSize * 0.5f;
+
+                        // ゴール移動アニメーション開始
                         if (goalModel_) {
-                            goalModel_->transform.translate = newGoalPos;
-                            goalModel_->transform.translate.y -= MapChip::kBlockSize * 0.5f;
+                            goalAnimPhase = 1;
                         }
 
-                        // 2. 真ん中に9(StaticHazard)を縦に並べる
-                        // マップ幅20なら真ん中は x=10
-                        int midX = 10;
+                        // ★壁生成位置: X=12 (1個分左) に変更
+                        int midX = 12;
                         size_t rows = mapChip->GetRowCount();
                         for (int y = 0; y < rows; ++y) {
-                            // 天井と床を残して壁を作る(あるいは全埋め)
-                            // 9番のFallingBlockを生成
                             Vector3 spawnPos = mapChip->GetWorldPosFromGrid(midX, y);
                             FallingBlock* newWall = new FallingBlock();
                             newWall->Initialize(device, spawnPos, BlockType::StaticHazard);
                             fallingBlocks_.push_back(newWall);
                         }
                     }
+                }
+
+                // ★ ゴール移動アニメーション処理
+                if (map3EventTriggered && goalAnimPhase > 0 && goalModel_) {
+                    float moveSpeed = 0.2f;
+                    Vector3 currentPos = goalModel_->transform.translate;
+
+                    // マップ最上段のワールドY座標
+                    float topY = (static_cast<float>(mapChip->GetRowCount() - 1)) * MapChip::kBlockSize + MapChip::kBlockSize * 0.5f;
+                    topY -= MapChip::kBlockSize * 0.5f;
+
+                    switch (goalAnimPhase) {
+                    case 1: // 上昇
+                        currentPos.y += moveSpeed;
+                        if (currentPos.y >= topY) {
+                            currentPos.y = topY;
+                            goalAnimPhase = 2;
+                        }
+                        break;
+                    case 2: // 左へ移動 (天井伝い)
+                        currentPos.x -= moveSpeed;
+                        if (currentPos.x <= goalTargetPosModel.x) {
+                            currentPos.x = goalTargetPosModel.x;
+                            goalAnimPhase = 3;
+                        }
+                        break;
+                    case 3: // 下降
+                        currentPos.y -= moveSpeed;
+                        if (currentPos.y <= goalTargetPosModel.y) {
+                            currentPos.y = goalTargetPosModel.y;
+                            goalAnimPhase = 0;
+
+                            Vector3 finalColliderPos = goalTargetPosModel;
+                            finalColliderPos.y += MapChip::kBlockSize * 0.5f;
+                            mapChip->SetGoalPosition(finalColliderPos);
+                        }
+                        break;
+                    }
+
+                    goalModel_->transform.translate = currentPos;
+
+                    // 移動中も当たり判定を追従させる
+                    Vector3 colliderPos = currentPos;
+                    colliderPos.y += MapChip::kBlockSize * 0.5f;
+                    mapChip->SetGoalPosition(colliderPos);
                 }
 
                 // 4. 死亡後のリトライ受付
@@ -567,6 +621,21 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
                     newBlock->Initialize(device, data.position, static_cast<BlockType>(data.type));
                     fallingBlocks_.push_back(newBlock);
                 }
+
+                // ★★★★ Map3の初期設定 (マップ遷移時にも必ず行う) ★★★★
+                if (currentMapFilePath == "Resources/map3.csv") {
+                    map3Timer = 0.0f;
+                    map3EventTriggered = false;
+                    goalAnimPhase = 0;
+                    int gx, gy;
+                    if (mapChip->FindBlock(6, gx, gy)) {
+                        block6Pos = mapChip->GetWorldPosFromGrid(gx, gy);
+                    } else {
+                        block6Pos = { 9999.0f, 0.0f, 0.0f };
+                    }
+                }
+                // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+
                 if (mapChip->HasGoal()) {
                     goalModel_ = Model::Create("Resources", "flag.obj", device);
                     if (goalModel_) {
